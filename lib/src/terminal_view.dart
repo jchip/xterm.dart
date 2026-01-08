@@ -43,6 +43,9 @@ class TerminalView extends StatefulWidget {
     this.cursorType = TerminalCursorType.block,
     this.alwaysShowCursor = false,
     this.deleteDetection = false,
+    this.autocorrect = false,
+    this.enableSuggestions = false,
+    this.enableIMEPersonalizedLearning = false,
     this.shortcuts,
     this.onKeyEvent,
     this.readOnly = false,
@@ -118,6 +121,17 @@ class TerminalView extends StatefulWidget {
   /// emit hardware delete event. Prefered on mobile platforms. [false] by
   /// default.
   final bool deleteDetection;
+
+  /// Whether to enable autocorrect in the soft keyboard. [false] by default.
+  /// Set to [true] to enable auto-space after swipe typing.
+  final bool autocorrect;
+
+  /// Whether to show input suggestions in the soft keyboard. [false] by default.
+  /// Set to [true] to enable word suggestions and auto-space after swipe typing.
+  final bool enableSuggestions;
+
+  /// Whether to enable IME personalized learning. [false] by default.
+  final bool enableIMEPersonalizedLearning;
 
   /// Shortcuts for this terminal. This has higher priority than input handler
   /// of the terminal If not provided, [defaultTerminalShortcuts] will be used.
@@ -255,6 +269,9 @@ class TerminalViewState extends State<TerminalView> {
         inputType: widget.keyboardType,
         keyboardAppearance: widget.keyboardAppearance,
         deleteDetection: widget.deleteDetection,
+        autocorrect: widget.autocorrect,
+        enableSuggestions: widget.enableSuggestions,
+        enableIMEPersonalizedLearning: widget.enableIMEPersonalizedLearning,
         onInsert: _onInsert,
         onDelete: () {
           _scrollToBottom();

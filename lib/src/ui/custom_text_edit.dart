@@ -19,6 +19,9 @@ class CustomTextEdit extends StatefulWidget {
     this.inputAction = TextInputAction.newline,
     this.keyboardAppearance = Brightness.light,
     this.deleteDetection = false,
+    this.autocorrect = false,
+    this.enableSuggestions = false,
+    this.enableIMEPersonalizedLearning = false,
   });
 
   final Widget child;
@@ -46,6 +49,15 @@ class CustomTextEdit extends StatefulWidget {
   final Brightness keyboardAppearance;
 
   final bool deleteDetection;
+
+  /// Whether to enable autocorrect. Defaults to false for terminal input.
+  final bool autocorrect;
+
+  /// Whether to show input suggestions. Defaults to false for terminal input.
+  final bool enableSuggestions;
+
+  /// Whether to enable IME personalized learning. Defaults to false.
+  final bool enableIMEPersonalizedLearning;
 
   @override
   CustomTextEditState createState() => CustomTextEditState();
@@ -163,9 +175,9 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
         inputType: widget.inputType,
         inputAction: widget.inputAction,
         keyboardAppearance: widget.keyboardAppearance,
-        autocorrect: false,
-        enableSuggestions: false,
-        enableIMEPersonalizedLearning: false,
+        autocorrect: widget.autocorrect,
+        enableSuggestions: widget.enableSuggestions,
+        enableIMEPersonalizedLearning: widget.enableIMEPersonalizedLearning,
       );
 
       _connection = TextInput.attach(this, config);
@@ -174,6 +186,9 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
 
       // setEditableRect(Rect.zero, Rect.zero);
 
+      // Reset to default on new connection
+      _initEditingState = _defaultEditingState;
+      _currentEditingState = _defaultEditingState.copyWith();
       _connection!.setEditingState(_initEditingState);
     }
   }
@@ -185,7 +200,7 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
     }
   }
 
-  TextEditingValue get _initEditingState => widget.deleteDetection
+  TextEditingValue get _defaultEditingState => widget.deleteDetection
       ? const TextEditingValue(
           text: '  ',
           selection: TextSelection.collapsed(offset: 2),
@@ -195,7 +210,9 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
           selection: TextSelection.collapsed(offset: 0),
         );
 
-  late var _currentEditingState = _initEditingState.copyWith();
+  // Mutable baseline for calculating text deltas - updated to preserve context for IME auto-space
+  late TextEditingValue _initEditingState = _defaultEditingState;
+  late var _currentEditingState = _defaultEditingState.copyWith();
 
   @override
   TextEditingValue? get currentTextEditingValue {
@@ -232,9 +249,18 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
     }
 
     // Reset editing state if composing is done
+    // Keep processed text as context so IME can add auto-space after swipe
     if (_currentEditingState.composing.isCollapsed &&
         _currentEditingState.text != _initEditingState.text) {
-      _connection!.setEditingState(_initEditingState);
+      // Instead of resetting to empty, keep current text as new baseline
+      // This lets Gboard know there's text before the cursor for auto-space
+      final newInit = TextEditingValue(
+        text: _currentEditingState.text,
+        selection: TextSelection.collapsed(offset: _currentEditingState.text.length),
+      );
+      _initEditingState = newInit;
+      _currentEditingState = newInit;
+      _connection?.setEditingState(newInit);
     }
   }
 
