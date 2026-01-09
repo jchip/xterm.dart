@@ -385,6 +385,13 @@ class TerminalViewState extends State<TerminalView> {
   }
 
   void _onInsert(String text) {
+    // Handle newline from multiline keyboard (TextInputType.multiline sends \n as text)
+    if (text == '\n' || text == '\r\n' || text == '\r') {
+      widget.terminal.keyInput(TerminalKey.enter);
+      _scrollToBottom();
+      return;
+    }
+
     final key = charToTerminalKey(text.trim());
 
     // On mobile platforms there is no guarantee that virtual keyboard will
