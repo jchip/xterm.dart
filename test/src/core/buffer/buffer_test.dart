@@ -244,4 +244,106 @@ void main() {
       expect(terminal.buffer.lines[2].toString(), '');
     });
   });
+
+  group('Buffer.eraseDisplay()', () {
+    test('pushes viewport lines to scrollback on main buffer', () {
+      final terminal = Terminal(maxLines: 1000);
+      terminal.resize(10, 5);
+
+      // Write 5 lines to fill the viewport
+      terminal.write('line1\r\n');
+      terminal.write('line2\r\n');
+      terminal.write('line3\r\n');
+      terminal.write('line4\r\n');
+      terminal.write('line5');
+
+      // Verify initial state - no scrollback yet
+      expect(terminal.buffer.scrollBack, 0);
+      expect(terminal.buffer.height, 5);
+
+      // Clear the display
+      terminal.buffer.eraseDisplay();
+
+      // After clear, should have 5 lines in scrollback and 5 empty viewport lines
+      expect(terminal.buffer.scrollBack, 5);
+      expect(terminal.buffer.height, 10);
+
+      // Verify the old content is in scrollback
+      expect(terminal.buffer.lines[0].toString(), startsWith('line1'));
+      expect(terminal.buffer.lines[1].toString(), startsWith('line2'));
+      expect(terminal.buffer.lines[2].toString(), startsWith('line3'));
+      expect(terminal.buffer.lines[3].toString(), startsWith('line4'));
+      expect(terminal.buffer.lines[4].toString(), startsWith('line5'));
+
+      // Verify viewport (lines 5-9) is now empty
+      expect(terminal.buffer.lines[5].toString(), '');
+      expect(terminal.buffer.lines[6].toString(), '');
+      expect(terminal.buffer.lines[7].toString(), '');
+      expect(terminal.buffer.lines[8].toString(), '');
+      expect(terminal.buffer.lines[9].toString(), '');
+
+      // Cursor should be at top
+      expect(terminal.buffer.cursorY, 0);
+    });
+
+    test('erases in place on alt buffer', () {
+      final terminal = Terminal();
+      terminal.resize(10, 3);
+
+      // Write to main buffer first
+      terminal.write('main1\r\n');
+      terminal.write('main2\r\n');
+      terminal.write('main3');
+
+      // Switch to alt buffer and write
+      terminal.write('\x1b[?1047h'); // Enable alt screen
+      terminal.write('alt1\r\n');
+      terminal.write('alt2\r\n');
+      terminal.write('alt3');
+
+      final initialHeight = terminal.buffer.height;
+
+      // Clear alt buffer
+      terminal.buffer.eraseDisplay();
+
+      // Should not create scrollback on alt buffer
+      expect(terminal.buffer.height, initialHeight);
+
+      // Viewport should be cleared
+      expect(terminal.buffer.lines[0].toString(), '');
+      expect(terminal.buffer.lines[1].toString(), '');
+      expect(terminal.buffer.lines[2].toString(), '');
+    });
+
+    test('handles multiple clears preserving all content', () {
+      final terminal = Terminal(maxLines: 1000);
+      terminal.resize(10, 3);
+
+      // First set of content
+      terminal.write('first1\r\n');
+      terminal.write('first2\r\n');
+      terminal.write('first3');
+
+      // First clear
+      terminal.buffer.eraseDisplay();
+      expect(terminal.buffer.scrollBack, 3);
+
+      // Second set of content
+      terminal.write('second1\r\n');
+      terminal.write('second2\r\n');
+      terminal.write('second3');
+
+      // Second clear
+      terminal.buffer.eraseDisplay();
+      expect(terminal.buffer.scrollBack, 6);
+
+      // Verify both sets are in scrollback
+      expect(terminal.buffer.lines[0].toString(), startsWith('first1'));
+      expect(terminal.buffer.lines[1].toString(), startsWith('first2'));
+      expect(terminal.buffer.lines[2].toString(), startsWith('first3'));
+      expect(terminal.buffer.lines[3].toString(), startsWith('second1'));
+      expect(terminal.buffer.lines[4].toString(), startsWith('second2'));
+      expect(terminal.buffer.lines[5].toString(), startsWith('second3'));
+    });
+  });
 }

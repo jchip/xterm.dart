@@ -149,6 +149,22 @@ class Buffer {
   /// Erases the viewport from the cursor position to the end of the buffer,
   /// including the cursor position.
   void eraseDisplayFromCursor() {
+    // Special case: if cursor is at top-left (0,0), this is equivalent to
+    // clearing the entire display (like the `clear` command does).
+    // For main buffer, push visible lines to scrollback before clearing.
+    if (_cursorX == 0 && _cursorY == 0 && !isAltBuffer && !lines.isFull) {
+      // Push viewport lines into scrollback by inserting new empty lines.
+      // Push viewHeight-1 lines, then clear the current line (line 0).
+      // This preserves all content to scrollback without creating extra blank lines.
+      for (var i = 0; i < viewHeight - 1; i++) {
+        lines.push(_newEmptyLine());
+      }
+      // Clear the current line (line 0 of the new viewport)
+      eraseLineFromCursor();
+      return;
+    }
+
+    // Normal case: just erase from cursor position to end
     eraseLineFromCursor();
 
     for (var i = absoluteCursorY + 1; i < height; i++) {

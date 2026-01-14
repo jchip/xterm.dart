@@ -206,7 +206,25 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   @override
   void performLayout() {
-    size = constraints.biggest;
+    // Calculate available space from constraints
+    final availableWidth = constraints.biggest.width;
+    final availableHeight = constraints.biggest.height;
+
+    // Calculate rows and cols that fit in available space (accounting for padding)
+    final usableWidth = availableWidth - _padding.horizontal;
+    final usableHeight = availableHeight - _padding.vertical;
+
+    // Snap to exact cell boundaries (ensure at least 1 row and 1 col)
+    final cols = max(1, (usableWidth / _painter.cellSize.width).floor());
+    final rows = max(1, (usableHeight / _painter.cellSize.height).floor());
+
+    // Set size to exact multiple of cell size plus padding
+    size = constraints.constrain(
+      Size(
+        cols * _painter.cellSize.width + _padding.horizontal,
+        rows * _painter.cellSize.height + _padding.vertical,
+      ),
+    );
 
     _updateViewportSize();
 
@@ -222,10 +240,8 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       _terminal.buffer.lines.length * _painter.cellSize.height;
 
   /// The distance from the top of the terminal to the top of the viewport.
-  // double get _scrollOffset => _offset.pixels;
   double get _scrollOffset {
-    // return _offset.pixels ~/ _painter.cellSize.height * _painter.cellSize.height;
-    return _offset.pixels;
+    return _offset.pixels ~/ _painter.cellSize.height * _painter.cellSize.height;
   }
 
   /// The height of a terminal line in pixels. This includes the line spacing.
@@ -272,6 +288,35 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       _controller.setSelection(
         _terminal.buffer.createAnchorFromOffset(range.begin),
         _terminal.buffer.createAnchorFromOffset(range.end),
+        mode: SelectionMode.line,
+      );
+    }
+  }
+
+  /// Selects entire lines in the terminal that contains [from] and [to].
+  void selectLine(Offset from, [Offset? to]) {
+    final fromOffset = getCellOffset(from);
+    final fromLineStart = CellOffset(0, fromOffset.y);
+    final fromLineEnd = CellOffset(_terminal.viewWidth, fromOffset.y);
+
+    if (to == null) {
+      _controller.setSelection(
+        _terminal.buffer.createAnchorFromOffset(fromLineStart),
+        _terminal.buffer.createAnchorFromOffset(fromLineEnd),
+        mode: SelectionMode.line,
+      );
+    } else {
+      final toOffset = getCellOffset(to);
+      final toLineStart = CellOffset(0, toOffset.y);
+      final toLineEnd = CellOffset(_terminal.viewWidth, toOffset.y);
+
+      // Select from the start of the earlier line to the end of the later line
+      final startOffset = fromOffset.y <= toOffset.y ? fromLineStart : toLineStart;
+      final endOffset = fromOffset.y <= toOffset.y ? toLineEnd : fromLineEnd;
+
+      _controller.setSelection(
+        _terminal.buffer.createAnchorFromOffset(startOffset),
+        _terminal.buffer.createAnchorFromOffset(endOffset),
         mode: SelectionMode.line,
       );
     }
@@ -324,15 +369,19 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   }
 
   /// Update the viewport size in cells based on the current widget size in
-  /// pixels.
+  /// pixels. Size should already be snapped to exact cell boundaries by
+  /// performLayout().
   void _updateViewportSize() {
     if (size <= _painter.cellSize) {
       return;
     }
 
+    // Size is pre-snapped to exact cell boundaries by performLayout().
+    // Use floor() to match the layout logic and ensure we only report rows/cols
+    // that fully fit in the viewport (prevents partial lines at bottom).
     final viewportSize = TerminalSize(
-      size.width ~/ _painter.cellSize.width,
-      _viewportHeight ~/ _painter.cellSize.height,
+      ((size.width - _padding.horizontal) / _painter.cellSize.width).floor(),
+      ((size.height - _padding.vertical) / _painter.cellSize.height).floor(),
     );
 
     if (_viewportSize != viewportSize) {
@@ -405,10 +454,12 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     final charHeight = _painter.cellSize.height;
 
     final firstLineOffset = _scrollOffset - _padding.top;
-    final lastLineOffset = _scrollOffset + size.height + _padding.bottom;
+    final lastLineOffset = _scrollOffset + _viewportHeight;
 
     final firstLine = firstLineOffset ~/ charHeight;
-    final lastLine = lastLineOffset ~/ charHeight;
+    // Calculate last line whose top edge is within viewport bounds
+    // Subtract 1 because lastLineOffset points to first pixel outside viewport
+    final lastLine = (lastLineOffset ~/ charHeight) - 1;
 
     final effectFirstLine = firstLine.clamp(0, lines.length - 1);
     final effectLastLine = lastLine.clamp(0, lines.length - 1);

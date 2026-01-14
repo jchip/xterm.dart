@@ -50,6 +50,8 @@ class TerminalGestureHandler extends StatefulWidget {
   State<TerminalGestureHandler> createState() => _TerminalGestureHandlerState();
 }
 
+enum _SelectionMode { character, word, line }
+
 class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   TerminalViewState get terminalView => widget.terminalView;
 
@@ -58,6 +60,8 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   DragStartDetails? _lastDragStartDetails;
 
   LongPressStartDetails? _lastLongPressStartDetails;
+
+  _SelectionMode? _dragSelectionMode;
 
   @override
   Widget build(BuildContext context) {
@@ -75,7 +79,9 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
       // onLongPressUp: onLongPressUp,
       onDragStart: onDragStart,
       onDragUpdate: onDragUpdate,
+      onDragEnd: onDragEnd,
       onDoubleTapDown: onDoubleTapDown,
+      onTripleTapDown: onTripleTapDown,
     );
   }
 
@@ -157,7 +163,13 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void onDoubleTapDown(TapDownDetails details) {
+    _dragSelectionMode = _SelectionMode.word;
     renderTerminal.selectWord(details.localPosition);
+  }
+
+  void onTripleTapDown(TapDownDetails details) {
+    _dragSelectionMode = _SelectionMode.line;
+    renderTerminal.selectLine(details.localPosition);
   }
 
   void onLongPressStart(LongPressStartDetails details) {
@@ -177,15 +189,49 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   void onDragStart(DragStartDetails details) {
     _lastDragStartDetails = details;
 
-    details.kind == PointerDeviceKind.mouse
-        ? renderTerminal.selectCharacters(details.localPosition)
-        : renderTerminal.selectWord(details.localPosition);
+    if (_dragSelectionMode == null) {
+      _dragSelectionMode = details.kind == PointerDeviceKind.mouse
+          ? _SelectionMode.character
+          : _SelectionMode.word;
+    }
+
+    switch (_dragSelectionMode!) {
+      case _SelectionMode.word:
+        renderTerminal.selectWord(details.localPosition);
+        break;
+      case _SelectionMode.line:
+        renderTerminal.selectLine(details.localPosition);
+        break;
+      case _SelectionMode.character:
+        renderTerminal.selectCharacters(details.localPosition);
+        break;
+    }
   }
 
   void onDragUpdate(DragUpdateDetails details) {
-    renderTerminal.selectCharacters(
-      _lastDragStartDetails!.localPosition,
-      details.localPosition,
-    );
+    switch (_dragSelectionMode!) {
+      case _SelectionMode.word:
+        renderTerminal.selectWord(
+          _lastDragStartDetails!.localPosition,
+          details.localPosition,
+        );
+        break;
+      case _SelectionMode.line:
+        renderTerminal.selectLine(
+          _lastDragStartDetails!.localPosition,
+          details.localPosition,
+        );
+        break;
+      case _SelectionMode.character:
+        renderTerminal.selectCharacters(
+          _lastDragStartDetails!.localPosition,
+          details.localPosition,
+        );
+        break;
+    }
+  }
+
+  void onDragEnd(DragEndDetails details) {
+    _dragSelectionMode = null;
   }
 }
