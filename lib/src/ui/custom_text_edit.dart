@@ -239,13 +239,37 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
     widget.onComposing(null);
 
     if (_currentEditingState.text.length < _initEditingState.text.length) {
+      // Deletion
       widget.onDelete();
-    } else {
+    } else if (_currentEditingState.text.startsWith(_initEditingState.text)) {
+      // Simple append - send only the new characters
       final textDelta = _currentEditingState.text.substring(
         _initEditingState.text.length,
       );
+      if (textDelta.isNotEmpty) {
+        widget.onInsert(textDelta);
+      }
+    } else {
+      // Text was replaced (autocorrect/suggestion accepted)
+      // Find common prefix to minimize backspaces
+      int commonPrefixLen = 0;
+      while (commonPrefixLen < _initEditingState.text.length &&
+             commonPrefixLen < _currentEditingState.text.length &&
+             _initEditingState.text[commonPrefixLen] == _currentEditingState.text[commonPrefixLen]) {
+        commonPrefixLen++;
+      }
 
-      widget.onInsert(textDelta);
+      // Delete characters after common prefix
+      final charsToDelete = _initEditingState.text.length - commonPrefixLen;
+      for (int i = 0; i < charsToDelete; i++) {
+        widget.onDelete();
+      }
+
+      // Insert the replacement text
+      final newText = _currentEditingState.text.substring(commonPrefixLen);
+      if (newText.isNotEmpty) {
+        widget.onInsert(newText);
+      }
     }
 
     // Reset editing state if composing is done
