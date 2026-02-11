@@ -1,4 +1,5 @@
-import 'package:test/test.dart';
+import 'dart:async';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:xterm/core.dart';
 
 void main() {
@@ -194,6 +195,69 @@ void main() {
 
       expect(lastCode, isNull);
       expect(lastData, isNull);
+    });
+  });
+
+  group('Terminal.appKeypadMode', () {
+    test('ESC = enables app keypad mode (DECKPAM)', () {
+      final terminal = Terminal();
+      expect(terminal.appKeypadMode, isFalse);
+
+      terminal.write('\x1b=');
+      expect(terminal.appKeypadMode, isTrue);
+    });
+
+    test('ESC > disables app keypad mode (DECKPNM)', () {
+      final terminal = Terminal();
+
+      // First enable it
+      terminal.write('\x1b=');
+      expect(terminal.appKeypadMode, isTrue);
+
+      // Then disable with ESC >
+      terminal.write('\x1b>');
+      expect(terminal.appKeypadMode, isFalse);
+    });
+  });
+
+  group('Terminal.altScreenBuffer', () {
+    test('mode 1049 restores cursor position on exit', () {
+      final terminal = Terminal();
+
+      // Move cursor to a specific position
+      terminal.write('\x1b[5;10H'); // row 5, col 10
+      final savedRow = terminal.buffer.cursorY;
+      final savedCol = terminal.buffer.cursorX;
+
+      // Enter alt screen (mode 1049) - saves cursor, clears, switches
+      terminal.write('\x1b[?1049h');
+      expect(terminal.isUsingAltBuffer, isTrue);
+
+      // Move cursor somewhere else in alt buffer
+      terminal.write('\x1b[1;1H');
+
+      // Exit alt screen (mode 1049) - should switch back and restore cursor
+      terminal.write('\x1b[?1049l');
+      expect(terminal.isUsingAltBuffer, isFalse);
+      expect(terminal.buffer.cursorY, savedRow);
+      expect(terminal.buffer.cursorX, savedCol);
+    });
+  });
+
+  group('Terminal.parseFlushTimeout', () {
+    test('flushes partial escape sequence after timeout', () async {
+      final terminal = Terminal();
+
+      // Write a lone ESC byte (incomplete sequence)
+      terminal.write('\x1b');
+
+      // After 100ms timeout, it should flush and emit as raw char
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      // Write normal text after and verify it renders
+      terminal.write('hello');
+      final line = terminal.buffer.lines[terminal.buffer.cursorY].toString();
+      expect(line, contains('hello'));
     });
   });
 }
