@@ -210,9 +210,15 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
           selection: TextSelection.collapsed(offset: 0),
         );
 
-  // Mutable baseline for calculating text deltas - updated to preserve context for IME auto-space
+  // Mutable baseline for calculating text deltas
   late TextEditingValue _initEditingState = _defaultEditingState;
   late var _currentEditingState = _defaultEditingState.copyWith();
+
+  void _resetEditingBuffer() {
+    _initEditingState = _defaultEditingState;
+    _currentEditingState = _defaultEditingState.copyWith();
+    _connection?.setEditingState(_initEditingState);
+  }
 
   @override
   TextEditingValue? get currentTextEditingValue {
@@ -272,26 +278,38 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
       }
     }
 
-    // Reset editing state if composing is done
-    // Keep processed text as context so IME can add auto-space after swipe
+    // Update baseline for delta computation.
     if (_currentEditingState.composing.isCollapsed &&
         _currentEditingState.text != _initEditingState.text) {
-      // Instead of resetting to empty, keep current text as new baseline
-      // This lets Gboard know there's text before the cursor for auto-space
-      final newInit = TextEditingValue(
-        text: _currentEditingState.text,
-        selection: TextSelection.collapsed(offset: _currentEditingState.text.length),
-      );
-      _initEditingState = newInit;
-      _currentEditingState = newInit;
-      _connection?.setEditingState(newInit);
+      final delta = _currentEditingState.text.length >
+              _initEditingState.text.length
+          ? _currentEditingState.text.substring(_initEditingState.text.length)
+          : '';
+
+      if (delta.contains('\n')) {
+        // Enter — clear buffer between commands
+        _resetEditingBuffer();
+      } else if (delta.endsWith(' ')) {
+        // Word boundary — clear buffer so backspace history doesn't pile up.
+        // Brief keyboard reinit is masked by the natural pause between words.
+        _resetEditingBuffer();
+      } else {
+        // Mid-word — track internally only, don't echo back to keyboard
+        _initEditingState = TextEditingValue(
+          text: _currentEditingState.text,
+          selection: TextSelection.collapsed(
+              offset: _currentEditingState.text.length),
+        );
+      }
     }
   }
 
   @override
   void performAction(TextInputAction action) {
-    // print('performAction $action');
     widget.onAction(action);
+    if (action == TextInputAction.newline) {
+      _resetEditingBuffer();
+    }
   }
 
   @override
