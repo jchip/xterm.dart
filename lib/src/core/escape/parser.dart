@@ -25,6 +25,20 @@ class EscapeParser {
   /// End of sequence or character being processed. Useful for debugging.
   int get tokenEnd => _queue.totalConsumed;
 
+  /// Whether the parser has pending bytes rolled back from an incomplete
+  /// escape sequence, waiting for more data.
+  bool get hasPendingBytes => _queue.isNotEmpty;
+
+  /// Flushes any pending bytes as raw characters. Called when no more data
+  /// arrives within a timeout window, to prevent partial escape sequences
+  /// from blocking the terminal indefinitely.
+  void flush() {
+    while (_queue.isNotEmpty) {
+      final char = _queue.consume();
+      _processChar(char);
+    }
+  }
+
   void write(String chunk) {
     _queue.unrefConsumedBlocks();
     _queue.add(chunk);
@@ -173,17 +187,17 @@ class EscapeParser {
     return true;
   }
 
-  /// `ESC >` Reset Application Keypad Mode (DECKPNM)
+  /// `ESC =` Set Application Keypad Mode (DECKPAM)
   ///
-  /// https://terminalguide.namepad.de/seq/a_esc_x3c_greater_than/
+  /// https://terminalguide.namepad.de/seq/a_esc_x3d_equals/
   bool _escHandleSetAppKeypadMode() {
     handler.setAppKeypadMode(true);
     return true;
   }
 
-  /// `ESC =` Set Application Keypad Mode (DECKPAM)
+  /// `ESC >` Reset Application Keypad Mode (DECKPNM)
   ///
-  /// https://terminalguide.namepad.de/seq/a_esc_x3d_equals/
+  /// https://terminalguide.namepad.de/seq/a_esc_x3c_greater_than/
   bool _escHandleResetAppKeypadMode() {
     handler.setAppKeypadMode(false);
     return true;
@@ -1035,6 +1049,7 @@ class EscapeParser {
           handler.useAltBuffer();
         } else {
           handler.useMainBuffer();
+          handler.restoreCursor();
         }
         return;
       case 2004:

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' show max;
 
 import 'package:xterm/src/base/observable.dart';
@@ -86,6 +87,8 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
   });
 
   late final _parser = EscapeParser(this);
+
+  Timer? _parseFlushTimer;
 
   final _emitter = const EscapeEmitter();
 
@@ -225,7 +228,14 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
   /// updates the states of the terminal and emits events such as [onBell] or
   /// [onTitleChange] when the escape sequences in [data] request it.
   void write(String data) {
+    _parseFlushTimer?.cancel();
     _parser.write(data);
+    if (_parser.hasPendingBytes) {
+      _parseFlushTimer = Timer(const Duration(milliseconds: 100), () {
+        _parser.flush();
+        notifyListeners();
+      });
+    }
     notifyListeners();
   }
 
