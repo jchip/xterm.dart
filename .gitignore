@@ -80,3 +80,5 @@ example/lib/debug.dart
 coverage/
 
 example2/
+
+test/src/failures
