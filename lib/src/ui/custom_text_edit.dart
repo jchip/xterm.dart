@@ -147,10 +147,37 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
 
   KeyEventResult _onKeyEvent(FocusNode focusNode, KeyEvent event) {
     if (_currentEditingState.composing.isCollapsed) {
-      return widget.onKeyEvent(focusNode, event);
+      final result = widget.onKeyEvent(focusNode, event);
+
+      // Some virtual keyboards send backspace as a key event instead of
+      // through updateEditingValue.  When that happens the editing buffer
+      // keeps growing while the terminal deletes the character, causing the
+      // suggestion strip to accumulate stale text.  Trim the buffer and
+      // push the corrected state back to the keyboard.
+      if (result == KeyEventResult.handled &&
+          event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.backspace) {
+        _syncBufferAfterKeyDelete();
+      }
+
+      return result;
     }
 
     return KeyEventResult.skipRemainingHandlers;
+  }
+
+  /// Remove the last character from the editing buffer and tell the keyboard
+  /// so its suggestion strip stays in sync.
+  void _syncBufferAfterKeyDelete() {
+    final text = _initEditingState.text;
+    if (text.isEmpty) return;
+    final shortened = text.substring(0, text.length - 1);
+    _initEditingState = TextEditingValue(
+      text: shortened,
+      selection: TextSelection.collapsed(offset: shortened.length),
+    );
+    _currentEditingState = _initEditingState.copyWith();
+    _connection?.setEditingState(_initEditingState);
   }
 
   void _openOrCloseInputConnectionIfNeeded() {
