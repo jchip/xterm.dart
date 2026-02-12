@@ -2,8 +2,9 @@ final _esc = String.fromCharCode(0x1b);
 
 String keytabUnescape(String str) {
   str = str
+      .replaceAll(r'\\', '\x00')
       .replaceAll(r'\E', _esc)
-      .replaceAll(r'\\', '\\')
+      .replaceAll('\x00', '\\')
       .replaceAll(r'\"', '"')
       .replaceAll(r'\t', '\t')
       .replaceAll(r'\r', '\r')

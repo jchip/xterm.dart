@@ -307,7 +307,14 @@ class Buffer {
   }
 
   void setCursorY(int cursorY) {
-    _cursorY = cursorY.clamp(0, viewHeight - 1);
+    var maxCursorY = viewHeight - 1;
+
+    if (terminal.originMode) {
+      cursorY += _marginTop;
+      maxCursorY = _marginBottom;
+    }
+
+    _cursorY = cursorY.clamp(0, maxCursorY);
   }
 
   void moveCursorX(int offset) {
@@ -315,7 +322,7 @@ class Buffer {
   }
 
   void moveCursorY(int offset) {
-    setCursorY(_cursorY + offset);
+    _cursorY = (_cursorY + offset).clamp(0, viewHeight - 1);
   }
 
   void setCursor(int cursorX, int cursorY) {
@@ -331,9 +338,8 @@ class Buffer {
   }
 
   void moveCursor(int offsetX, int offsetY) {
-    final cursorX = _cursorX + offsetX;
-    final cursorY = _cursorY + offsetY;
-    setCursor(cursorX, cursorY);
+    _cursorX = (_cursorX + offsetX).clamp(0, viewWidth - 1);
+    _cursorY = (_cursorY + offsetY).clamp(0, viewHeight - 1);
   }
 
   /// Save cursor position, charmap and text attributes.

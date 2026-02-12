@@ -692,6 +692,9 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
   @override
   void setOriginMode(bool enabled) {
     _originMode = enabled;
+    if (enabled) {
+      _buffer.setCursor(0, 0);
+    }
   }
 
   @override

@@ -360,6 +360,7 @@ class EscapeParser {
 
     if (_csi.params.isNotEmpty) {
       y = _csi.params[0];
+      if (y == 0) y = 1;
     }
 
     handler.setCursorY(y - 1);
@@ -397,7 +398,7 @@ class EscapeParser {
     switch (cmd) {
       case 0:
         return handler.clearTabStopUnderCursor();
-      default:
+      case 3:
         return handler.clearAllTabStops();
     }
   }
@@ -516,9 +517,14 @@ class EscapeParser {
           handler.setForegroundColor16(NamedColor.white);
           continue;
         case 38:
+          if (i + 1 >= params.length) continue;
           final mode = params[i + 1];
           switch (mode) {
             case 2:
+              if (i + 4 >= params.length) {
+                i = params.length - 1;
+                break;
+              }
               final r = params[i + 2];
               final g = params[i + 3];
               final b = params[i + 4];
@@ -526,6 +532,10 @@ class EscapeParser {
               i += 4;
               break;
             case 5:
+              if (i + 2 >= params.length) {
+                i = params.length - 1;
+                break;
+              }
               final index = params[i + 2];
               handler.setForegroundColor256(index);
               i += 2;
@@ -561,9 +571,14 @@ class EscapeParser {
           handler.setBackgroundColor16(NamedColor.white);
           continue;
         case 48:
+          if (i + 1 >= params.length) continue;
           final mode = params[i + 1];
           switch (mode) {
             case 2:
+              if (i + 4 >= params.length) {
+                i = params.length - 1;
+                break;
+              }
               final r = params[i + 2];
               final g = params[i + 3];
               final b = params[i + 4];
@@ -571,6 +586,10 @@ class EscapeParser {
               i += 4;
               break;
             case 5:
+              if (i + 2 >= params.length) {
+                i = params.length - 1;
+                break;
+              }
               final index = params[i + 2];
               handler.setBackgroundColor256(index);
               i += 2;

@@ -258,7 +258,24 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   }
 
   /// Get the [CellOffset] of the cell that [offset] is in.
+  /// Returns viewport-relative coordinates (0-based from first visible row),
+  /// suitable for mouse reporting. The Y coordinate does NOT include the
+  /// scrollback offset.
   CellOffset getCellOffset(Offset offset) {
+    final x = offset.dx - _padding.left;
+    final y = offset.dy - _padding.top;
+    final row = y ~/ _painter.cellSize.height;
+    final col = x ~/ _painter.cellSize.width;
+    return CellOffset(
+      col.clamp(0, _terminal.viewWidth - 1),
+      row.clamp(0, _terminal.viewHeight - 1),
+    );
+  }
+
+  /// Convert a pixel [offset] to a buffer-absolute [CellOffset] by adding
+  /// the scroll offset. Used by selection methods that need to index into
+  /// the full buffer (including scrollback).
+  CellOffset _getBufferCellOffset(Offset offset) {
     final x = offset.dx - _padding.left;
     final y = offset.dy - _padding.top + _scrollOffset;
     final row = y ~/ _painter.cellSize.height;
@@ -271,7 +288,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   /// Selects entire words in the terminal that contains [from] and [to].
   void selectWord(Offset from, [Offset? to]) {
-    final fromOffset = getCellOffset(from);
+    final fromOffset = _getBufferCellOffset(from);
     final fromBoundary = _terminal.buffer.getWordBoundary(fromOffset);
     if (fromBoundary == null) return;
     if (to == null) {
@@ -281,7 +298,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
         mode: SelectionMode.line,
       );
     } else {
-      final toOffset = getCellOffset(to);
+      final toOffset = _getBufferCellOffset(to);
       final toBoundary = _terminal.buffer.getWordBoundary(toOffset);
       if (toBoundary == null) return;
       final range = fromBoundary.merge(toBoundary);
@@ -295,7 +312,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   /// Selects entire lines in the terminal that contains [from] and [to].
   void selectLine(Offset from, [Offset? to]) {
-    final fromOffset = getCellOffset(from);
+    final fromOffset = _getBufferCellOffset(from);
     final fromLineStart = CellOffset(0, fromOffset.y);
     final fromLineEnd = CellOffset(_terminal.viewWidth, fromOffset.y);
 
@@ -306,7 +323,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
         mode: SelectionMode.line,
       );
     } else {
-      final toOffset = getCellOffset(to);
+      final toOffset = _getBufferCellOffset(to);
       final toLineStart = CellOffset(0, toOffset.y);
       final toLineEnd = CellOffset(_terminal.viewWidth, toOffset.y);
 
@@ -325,14 +342,14 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   /// Selects characters in the terminal that starts from [from] to [to]. At
   /// least one cell is selected even if [from] and [to] are same.
   void selectCharacters(Offset from, [Offset? to]) {
-    final fromPosition = getCellOffset(from);
+    final fromPosition = _getBufferCellOffset(from);
     if (to == null) {
       _controller.setSelection(
         _terminal.buffer.createAnchorFromOffset(fromPosition),
         _terminal.buffer.createAnchorFromOffset(fromPosition),
       );
     } else {
-      var toPosition = getCellOffset(to);
+      var toPosition = _getBufferCellOffset(to);
       if (toPosition.x >= fromPosition.x) {
         toPosition = CellOffset(toPosition.x + 1, toPosition.y);
       }

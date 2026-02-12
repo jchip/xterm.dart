@@ -32,12 +32,12 @@ key Tab   +Shift-Ansi  : "\t"
 key Backtab     +Ansi  : "\E[Z"
 key Backtab     -Ansi  : "\t"
 
-key Return-Shift-NewLine : "\r"
-key Return-Shift+NewLine : "\r\n"
+key Enter-Shift-NewLine : "\r"
+key Enter-Shift+NewLine : "\r\n"
 
-key Return+Shift         : "\EOM"
+key Enter+Shift         : "\EOM"
 
-key Backspace  +Alt : "\x17"
+key Backspace  +Alt : "\E\x7f"
 
 # Backspace and Delete codes are preserving CTRL-H.
 #
@@ -178,10 +178,10 @@ key F10 -AnyMod  : "\E[21~"
 key F11 -AnyMod  : "\E[23~"
 key F12 -AnyMod  : "\E[24~"
 
-key F1  +AnyMod  : "\EO*P"
-key F2  +AnyMod  : "\EO*Q"
-key F3  +AnyMod  : "\EO*R"
-key F4  +AnyMod  : "\EO*S"
+key F1  +AnyMod  : "\E[1;*P"
+key F2  +AnyMod  : "\E[1;*Q"
+key F3  +AnyMod  : "\E[1;*R"
+key F4  +AnyMod  : "\E[1;*S"
 key F5  +AnyMod  : "\E[15;*~"
 key F6  +AnyMod  : "\E[17;*~"
 key F7  +AnyMod  : "\E[18;*~"
