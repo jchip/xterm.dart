@@ -301,8 +301,7 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
 
     if (alt && platform != TerminalTargetPlatform.macos) {
       if (charCode >= Ascii.a && charCode <= Ascii.z) {
-        final code = charCode - Ascii.a + 65;
-        final input = [0x1b, code];
+        final input = [0x1b, charCode];
         onOutput?.call(String.fromCharCodes(input));
         return true;
       }
@@ -473,7 +472,7 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
 
   @override
   void setTapStop() {
-    _tabStops.isSetAt(_buffer.cursorX);
+    _tabStops.setAt(_buffer.cursorX);
   }
 
   @override

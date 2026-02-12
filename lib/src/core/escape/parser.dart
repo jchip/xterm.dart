@@ -232,8 +232,9 @@ class EscapeParser {
     _csi.params.clear();
 
     // test whether the csi is a `CSI ? Ps ...` or `CSI Ps ...`
+    // Only match actual prefix characters (? > = <), not ; or :
     final prefix = _queue.peek();
-    if (prefix >= Ascii.colon && prefix <= Ascii.questionMark) {
+    if (prefix >= Ascii.lessThan && prefix <= Ascii.questionMark) {
       _csi.prefix = prefix;
       _queue.consume();
     } else {
@@ -251,10 +252,9 @@ class EscapeParser {
       final char = _queue.consume();
 
       if (char == Ascii.semicolon) {
-        if (hasParam) {
-          _csi.params.add(param);
-        }
+        _csi.params.add(param);
         param = 0;
+        hasParam = false;
         continue;
       }
 
@@ -271,7 +271,7 @@ class EscapeParser {
       }
 
       if (char >= Ascii.atSign && char <= Ascii.tilde) {
-        if (hasParam) {
+        if (hasParam || _csi.params.isNotEmpty) {
           _csi.params.add(param);
         }
 
@@ -372,9 +372,13 @@ class EscapeParser {
     var row = 1;
     var col = 1;
 
-    if (_csi.params.length == 2) {
+    if (_csi.params.isNotEmpty) {
       row = _csi.params[0];
-      col = _csi.params[1];
+      if (row == 0) row = 1;
+      if (_csi.params.length >= 2) {
+        col = _csi.params[1];
+        if (col == 0) col = 1;
+      }
     }
 
     handler.setCursor(col - 1, row - 1);
@@ -465,6 +469,7 @@ class EscapeParser {
           handler.unsetCursorBold();
           continue;
         case 22:
+          handler.unsetCursorBold();
           handler.unsetCursorFaint();
           continue;
         case 23:
@@ -665,6 +670,7 @@ class EscapeParser {
     }
 
     handler.setMargins(top - 1, bottom);
+    handler.setCursor(0, 0);
   }
 
   /// `ESC [ Ps t` Window operations [DISPATCH]
@@ -996,7 +1002,6 @@ class EscapeParser {
       case 66:
         return handler.setAppKeypadMode(enabled);
       case 1000:
-      case 10061000:
         return enabled
             ? handler.setMouseMode(MouseMode.upDownScroll)
             : handler.setMouseMode(MouseMode.none);

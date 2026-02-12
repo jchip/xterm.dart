@@ -72,16 +72,16 @@ key Down  -Shift-AnyMod+Ansi-AppCuKeys : "\E[B"
 key Right -Shift-AnyMod+Ansi-AppCuKeys : "\E[C"
 key Left  -Shift-AnyMod+Ansi-AppCuKeys : "\E[D"
 
-key Up    -Shift+AnyMod+Ansi           : "\E[1;5A"
-key Down  -Shift+AnyMod+Ansi           : "\E[1;5B"
+key Up    -Shift+AnyMod+Ansi           : "\E[1;*A"
+key Down  -Shift+AnyMod+Ansi           : "\E[1;*B"
 
-# Right / Left with Control
-key Right -Shift-Alt+Control+Ansi      : "\E[1;5C"
-key Left  -Shift-Alt+Control+Ansi      : "\E[1;5D"
+# Right / Left with modifier (not on Mac for Alt)
+key Right -Shift+AnyMod+Ansi-Mac      : "\E[1;*C"
+key Left  -Shift+AnyMod+Ansi-Mac      : "\E[1;*D"
 
-# Right / Left with Alt not on a Mac
-key Right -Shift+Alt-Control+Ansi-Mac  : "\E[1;5C"
-key Left  -Shift+Alt-Control+Ansi-Mac  : "\E[1;5D"
+# Right / Left with Control on Mac
+key Right -Shift-Alt+Control+Ansi+Mac  : "\E[1;5C"
+key Left  -Shift-Alt+Control+Ansi+Mac  : "\E[1;5D"
 
 # Right / Left with Alt on a Mac
 key Right -Shift+Alt-Control+Ansi+Mac  : "\Ef"

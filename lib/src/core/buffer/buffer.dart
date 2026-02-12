@@ -111,10 +111,12 @@ class Buffer {
 
     final cellWidth = unicodeV11.wcwidth(codePoint);
     if (_cursorX >= terminal.viewWidth) {
-      index();
-      setCursorX(0);
       if (terminal.autoWrapMode) {
+        index();
+        setCursorX(0);
         currentLine.isWrapped = true;
+      } else {
+        _cursorX = terminal.viewWidth - 1;
       }
     }
 
@@ -206,7 +208,7 @@ class Buffer {
   /// cursor.
   void eraseLineToCursor() {
     currentLine.isWrapped = false;
-    currentLine.eraseRange(0, _cursorX, terminal.cursor);
+    currentLine.eraseRange(0, _cursorX + 1, terminal.cursor);
   }
 
   /// Erases the line at the current cursor position.

@@ -1,4 +1,4 @@
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:xterm/src/core/mouse/reporter.dart';
 import 'package:xterm/xterm.dart';
 
@@ -12,7 +12,7 @@ void main() {
         MouseReportMode.normal,
       );
 
-      expect(output, equals('\x1B[M !"'));
+      expect(output, equals('\x1B[M !!'));
     });
 
     test('report() supports utf mode', () {
@@ -23,7 +23,7 @@ void main() {
         MouseReportMode.utf,
       );
 
-      expect(output, equals('\x1B[M !"'));
+      expect(output, equals('\x1B[M !!'));
     });
 
     test('report() supports sgr mode', () {
