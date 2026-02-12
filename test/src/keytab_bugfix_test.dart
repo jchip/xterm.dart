@@ -50,6 +50,37 @@ void main() {
           reason:
               'Keytab should not have entries for TerminalKey.returnKey (unmapped from Flutter)');
     });
+
+    test('numpadEnter produces \\r (regression)', () {
+      final output = <String>[];
+      final terminal = Terminal(onOutput: output.add);
+
+      final result = terminal.keyInput(TerminalKey.numpadEnter);
+      expect(result, isTrue, reason: 'numpadEnter should produce output');
+      expect(output.last, '\r');
+    });
+
+    test('TerminalKey.returnKey and TerminalKey.enter are distinct enum values',
+        () {
+      expect(TerminalKey.returnKey, isNot(equals(TerminalKey.enter)),
+          reason: 'returnKey and enter must be distinct enum values');
+      expect(TerminalKey.returnKey.index, isNot(equals(TerminalKey.enter.index)),
+          reason: 'returnKey and enter must have different enum indices');
+    });
+
+    test('Enter in newline mode sends \\r\\n (verify still works after change)',
+        () {
+      final output = <String>[];
+      final terminal = Terminal(onOutput: output.add);
+      terminal.resize(80, 24);
+
+      // Enable newline mode (LNM): CSI 20 h
+      terminal.write('\x1b[20h');
+
+      terminal.keyInput(TerminalKey.enter);
+      expect(output.last, '\r\n',
+          reason: 'Enter in newline mode must send \\r\\n');
+    });
   });
 
   group('XTD-37: Alt+Backspace sends ESC DEL instead of Ctrl+W', () {
@@ -76,6 +107,35 @@ void main() {
       final record = keytab.find(TerminalKey.backspace, alt: true);
       expect(record, isNotNull);
       expect(record!.action.unescapedValue(), '\x1b\x7f');
+    });
+
+    test('Regular Backspace sends DEL (0x7f)', () {
+      final output = <String>[];
+      final terminal = Terminal(onOutput: output.add);
+
+      terminal.keyInput(TerminalKey.backspace);
+      expect(output.last, '\x7f',
+          reason: 'Unmodified Backspace should send DEL (0x7f)');
+    });
+
+    test('Alt+Backspace output is exactly 2 chars long', () {
+      final output = <String>[];
+      final terminal = Terminal(onOutput: output.add);
+
+      terminal.keyInput(TerminalKey.backspace, alt: true);
+      expect(output.last.length, 2,
+          reason: 'Alt+Backspace should produce exactly 2 characters');
+    });
+
+    test('Alt+Backspace first char is ESC, second is DEL', () {
+      final output = <String>[];
+      final terminal = Terminal(onOutput: output.add);
+
+      terminal.keyInput(TerminalKey.backspace, alt: true);
+      expect(output.last.codeUnitAt(0), 0x1b,
+          reason: 'First char should be ESC (0x1b)');
+      expect(output.last.codeUnitAt(1), 0x7f,
+          reason: 'Second char should be DEL (0x7f)');
     });
   });
 
@@ -146,6 +206,60 @@ void main() {
       // Unmodified F1 should still use \x1bOP (SS3 format)
       expect(output.last, '\x1bOP');
     });
+
+    test('Shift+F2 sends \\x1b[1;2Q', () {
+      final output = <String>[];
+      final terminal = Terminal(onOutput: output.add);
+
+      terminal.keyInput(TerminalKey.f2, shift: true);
+      expect(output.last, '\x1b[1;2Q');
+    });
+
+    test('Alt+F3 sends \\x1b[1;3R', () {
+      final output = <String>[];
+      final terminal = Terminal(onOutput: output.add);
+
+      terminal.keyInput(TerminalKey.f3, alt: true);
+      expect(output.last, '\x1b[1;3R');
+    });
+
+    test('Ctrl+Shift+F1 sends \\x1b[1;6P (modifier 6)', () {
+      final output = <String>[];
+      final terminal = Terminal(onOutput: output.add);
+
+      terminal.keyInput(TerminalKey.f1, ctrl: true, shift: true);
+      expect(output.last, '\x1b[1;6P');
+    });
+
+    test('Unmodified F2=\\x1bOQ, F3=\\x1bOR, F4=\\x1bOS (SS3 preserved)', () {
+      final output = <String>[];
+      final terminal = Terminal(onOutput: output.add);
+
+      terminal.keyInput(TerminalKey.f2);
+      expect(output.last, '\x1bOQ', reason: 'Unmodified F2 should be SS3 Q');
+
+      terminal.keyInput(TerminalKey.f3);
+      expect(output.last, '\x1bOR', reason: 'Unmodified F3 should be SS3 R');
+
+      terminal.keyInput(TerminalKey.f4);
+      expect(output.last, '\x1bOS', reason: 'Unmodified F4 should be SS3 S');
+    });
+
+    test('F5 unmodified sends \\x1b[15~', () {
+      final output = <String>[];
+      final terminal = Terminal(onOutput: output.add);
+
+      terminal.keyInput(TerminalKey.f5);
+      expect(output.last, '\x1b[15~');
+    });
+
+    test('Ctrl+F5 sends \\x1b[15;5~', () {
+      final output = <String>[];
+      final terminal = Terminal(onOutput: output.add);
+
+      terminal.keyInput(TerminalKey.f5, ctrl: true);
+      expect(output.last, '\x1b[15;5~');
+    });
   });
 
   group('XTD-44: keytabUnescape processes \\\\ before \\E', () {
@@ -180,6 +294,31 @@ void main() {
     test('\\E\\x7f produces ESC DEL', () {
       final result = keytabUnescape(r'\E\x7f');
       expect(result, '\x1b\x7f');
+    });
+
+    test('keytabUnescape with empty string returns empty', () {
+      final result = keytabUnescape('');
+      expect(result, '');
+    });
+
+    test('keytabUnescape with plain text returns unchanged', () {
+      final result = keytabUnescape('hello world');
+      expect(result, 'hello world');
+    });
+
+    test('Multiple \\E: \\E[1;\\E produces \\x1b[1;\\x1b', () {
+      final result = keytabUnescape(r'\E[1;\E');
+      expect(result, '\x1b[1;\x1b');
+    });
+
+    test(r'\\\\  (four backslashes raw) produces \\ (two backslashes)', () {
+      final result = keytabUnescape(r'\\\\');
+      expect(result, '\\\\');
+    });
+
+    test('\\E at end of string works', () {
+      final result = keytabUnescape(r'abc\E');
+      expect(result, 'abc\x1b');
     });
   });
 }
