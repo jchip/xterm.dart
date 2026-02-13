@@ -1,5 +1,3 @@
-import 'package:xterm/src/utils/hash_values.dart';
-
 class CellData {
   CellData({
     required this.foreground,
@@ -25,8 +23,25 @@ class CellData {
 
   int content;
 
+  @pragma('vm:prefer-inline')
   int getHash() {
-    return hashValues(foreground, background, flags, content);
+    // Inline Jenkins hash for 4 int values — avoids boxing from Object? params
+    var h = 0;
+    h = 0x1fffffff & (h + foreground);
+    h = 0x1fffffff & (h + ((0x0007ffff & h) << 10));
+    h = h ^ (h >> 6);
+    h = 0x1fffffff & (h + background);
+    h = 0x1fffffff & (h + ((0x0007ffff & h) << 10));
+    h = h ^ (h >> 6);
+    h = 0x1fffffff & (h + flags);
+    h = 0x1fffffff & (h + ((0x0007ffff & h) << 10));
+    h = h ^ (h >> 6);
+    h = 0x1fffffff & (h + content);
+    h = 0x1fffffff & (h + ((0x0007ffff & h) << 10));
+    h = h ^ (h >> 6);
+    h = 0x1fffffff & (h + ((0x03ffffff & h) << 3));
+    h = h ^ (h >> 11);
+    return 0x1fffffff & (h + ((0x00003fff & h) << 15));
   }
 
   @override
