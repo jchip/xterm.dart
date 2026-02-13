@@ -19,6 +19,13 @@ import 'package:xterm/src/ui/terminal_theme.dart';
 
 typedef EditableRectCallback = void Function(Rect rect, Rect caretRect);
 
+class _LinePicture {
+  final Picture picture;
+  final int contentHash;
+  _LinePicture(this.picture, this.contentHash);
+  void dispose() => picture.dispose();
+}
+
 class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   RenderTerminal({
     required Terminal terminal,
@@ -95,18 +102,21 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   set textStyle(TerminalStyle value) {
     if (value == _painter.textStyle) return;
     _painter.textStyle = value;
+    _clearLineCache();
     markNeedsLayout();
   }
 
   set textScaler(TextScaler value) {
     if (value == _painter.textScaler) return;
     _painter.textScaler = value;
+    _clearLineCache();
     markNeedsLayout();
   }
 
   set theme(TerminalTheme value) {
     if (value == _painter.theme) return;
     _painter.theme = value;
+    _clearLineCache();
     markNeedsPaint();
   }
 
@@ -152,6 +162,16 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   final TerminalPainter _painter;
 
   var _stickToBottom = true;
+
+  /// Line-level Picture cache: absolute line index -> cached picture + hash.
+  final _lineCache = <int, _LinePicture>{};
+
+  void _clearLineCache() {
+    for (final entry in _lineCache.values) {
+      entry.dispose();
+    }
+    _lineCache.clear();
+  }
 
   int _lastLineCount = -1;
   CellOffset? _lastNotifiedCursorPos;
@@ -202,6 +222,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   @override
   void detach() {
+    _clearLineCache();
     super.detach();
     _offset.removeListener(_onScroll);
     _terminal.removeListener(_onTerminalChange);
@@ -216,6 +237,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   @override
   void systemFontsDidChange() {
+    _clearLineCache();
     _painter.clearFontCache();
     super.systemFontsDidChange();
   }
@@ -505,12 +527,37 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     final effectLastLine = lastLine.clamp(0, lines.length - 1);
 
     for (var i = effectFirstLine; i <= effectLastLine; i++) {
-      _painter.paintLine(
-        canvas,
-        offset.translate(0, (i * charHeight + _lineOffset).truncateToDouble()),
-        lines[i],
-      );
+      final line = lines[i];
+      final lineY = (i * charHeight + _lineOffset).truncateToDouble();
+      final hash = _painter.computeLineHash(line);
+
+      final cached = _lineCache[i];
+      if (cached != null && cached.contentHash == hash) {
+        canvas.save();
+        canvas.translate(offset.dx, offset.dy + lineY);
+        canvas.drawPicture(cached.picture);
+        canvas.restore();
+      } else {
+        final recorder = PictureRecorder();
+        _painter.paintLine(Canvas(recorder), Offset.zero, line);
+        final picture = recorder.endRecording();
+        cached?.dispose();
+        _lineCache[i] = _LinePicture(picture, hash);
+        canvas.save();
+        canvas.translate(offset.dx, offset.dy + lineY);
+        canvas.drawPicture(picture);
+        canvas.restore();
+      }
     }
+
+    // Evict cache entries outside visible range
+    _lineCache.removeWhere((key, entry) {
+      if (key < effectFirstLine || key > effectLastLine) {
+        entry.dispose();
+        return true;
+      }
+      return false;
+    });
 
     if (_terminal.buffer.absoluteCursorY >= effectFirstLine &&
         _terminal.buffer.absoluteCursorY <= effectLastLine) {
