@@ -153,6 +153,10 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   var _stickToBottom = true;
 
+  int _lastLineCount = -1;
+  CellOffset? _lastNotifiedCursorPos;
+  bool _contentChanged = false;
+
   void _onScroll() {
     _stickToBottom = _scrollOffset >= _maxScrollExtent;
     markNeedsLayout();
@@ -164,7 +168,14 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   }
 
   void _onTerminalChange() {
-    markNeedsLayout();
+    _contentChanged = true;
+    final lineCount = _terminal.buffer.lines.length;
+    if (lineCount != _lastLineCount) {
+      _lastLineCount = lineCount;
+      markNeedsLayout();
+    } else {
+      markNeedsPaint();
+    }
     _notifyEditableRect();
   }
 
@@ -371,6 +382,10 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   }
 
   void _notifyEditableRect() {
+    final cursorPos = CellOffset(_terminal.buffer.cursorX, _terminal.buffer.absoluteCursorY);
+    if (cursorPos == _lastNotifiedCursorPos) return;
+    _lastNotifiedCursorPos = cursorPos;
+
     final cursor = localToGlobal(cursorOffset);
 
     final rect = Rect.fromLTRB(
@@ -461,7 +476,10 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   @override
   void paint(PaintingContext context, Offset offset) {
     _paint(context, offset);
-    context.setWillChangeHint();
+    if (_contentChanged) {
+      context.setWillChangeHint();
+      _contentChanged = false;
+    }
   }
 
   void _paint(PaintingContext context, Offset offset) {

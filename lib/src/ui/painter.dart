@@ -26,6 +26,9 @@ class TerminalPainter {
   /// [_textStyle] is changed, or when the system font changes.
   final _paragraphCache = ParagraphCache(10240);
 
+  final _bgPaint = Paint();
+  final _highlightPaint = Paint()..strokeWidth = 1;
+
   TerminalStyle get textStyle => _textStyle;
   TerminalStyle _textStyle;
   set textStyle(TerminalStyle value) {
@@ -127,13 +130,11 @@ class TerminalPainter {
     final endOffset =
         offset.translate(length * _cellSize.width, _cellSize.height);
 
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1;
+    _highlightPaint.color = color;
 
     canvas.drawRect(
       Rect.fromPoints(offset, endOffset),
-      paint,
+      _highlightPaint,
     );
   }
 
@@ -232,11 +233,11 @@ class TerminalPainter {
       color = resolveBackgroundColor(cellData.background);
     }
 
-    final paint = Paint()..color = color;
+    _bgPaint.color = color;
     final doubleWidth = cellData.content >> CellContent.widthShift == 2;
     final widthScale = doubleWidth ? 2 : 1;
     final size = Size(_cellSize.width * widthScale + 1, _cellSize.height);
-    canvas.drawRect(offset & size, paint);
+    canvas.drawRect(offset & size, _bgPaint);
   }
 
   /// Get the effective foreground color for a cell from information encoded in

@@ -13,9 +13,17 @@ class ByteConsumer {
 
   void add(String data) {
     if (data.isEmpty) return;
-    final runes = data.runes.toList(growable: false);
-    _queue.addLast(runes);
-    _length += runes.length;
+    final units = data.codeUnits;
+    bool isAscii = true;
+    for (int i = 0; i < units.length; i++) {
+      if (units[i] > 127) {
+        isAscii = false;
+        break;
+      }
+    }
+    final List<int> list = isAscii ? units : data.runes.toList(growable: false);
+    _queue.addLast(list);
+    _length += list.length;
   }
 
   int peek() {
