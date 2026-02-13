@@ -90,6 +90,8 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
 
   Timer? _parseFlushTimer;
 
+  bool _needsNotify = false;
+
   final _emitter = const EscapeEmitter();
 
   late var _buffer = _mainBuffer;
@@ -224,6 +226,16 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
   @override
   bool reflowEnabled;
 
+  void _scheduleNotify() {
+    if (!_needsNotify) {
+      _needsNotify = true;
+      scheduleMicrotask(() {
+        _needsNotify = false;
+        notifyListeners();
+      });
+    }
+  }
+
   /// Writes the data from the underlying program to the terminal. Calling this
   /// updates the states of the terminal and emits events such as [onBell] or
   /// [onTitleChange] when the escape sequences in [data] request it.
@@ -233,10 +245,10 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
     if (_parser.hasPendingBytes) {
       _parseFlushTimer = Timer(const Duration(milliseconds: 100), () {
         _parser.flush();
-        notifyListeners();
+        _scheduleNotify();
       });
     }
-    notifyListeners();
+    _scheduleNotify();
   }
 
   /// Sends a key event to the underlying program.
