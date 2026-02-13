@@ -163,14 +163,22 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   var _stickToBottom = true;
 
-  /// Line-level Picture cache: absolute line index -> cached picture + hash.
+  /// Line-level Picture cache: absolute line index -> cached picture + version.
+  /// Only populated for lines that were stable (unchanged) for 2 consecutive
+  /// frames, avoiding PictureRecorder overhead during full-screen animations.
   final _lineCache = <int, _LinePicture>{};
+
+  /// Tracks the version of each line from the previous paint. Lines whose
+  /// version matches on the next paint are considered stable and promoted
+  /// to the Picture cache.
+  final _prevLineVersions = <int, int>{};
 
   void _clearLineCache() {
     for (final entry in _lineCache.values) {
       entry.dispose();
     }
     _lineCache.clear();
+    _prevLineVersions.clear();
   }
 
   int _lastLineCount = -1;
@@ -529,24 +537,40 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     for (var i = effectFirstLine; i <= effectLastLine; i++) {
       final line = lines[i];
       final lineY = (i * charHeight + _lineOffset).truncateToDouble();
+      final lineVersion = line.version;
 
       final cached = _lineCache[i];
-      if (cached != null && cached.version == line.version) {
+      if (cached != null && cached.version == lineVersion) {
+        // Cache hit: replay cached picture
         canvas.save();
         canvas.translate(offset.dx, offset.dy + lineY);
         canvas.drawPicture(cached.picture);
         canvas.restore();
-      } else {
+      } else if (_prevLineVersions[i] == lineVersion) {
+        // Stable line (same version as last frame): promote to cache
         final recorder = PictureRecorder();
         _painter.paintLine(Canvas(recorder), Offset.zero, line);
         final picture = recorder.endRecording();
         cached?.dispose();
-        _lineCache[i] = _LinePicture(picture, line.version);
+        _lineCache[i] = _LinePicture(picture, lineVersion);
         canvas.save();
         canvas.translate(offset.dx, offset.dy + lineY);
         canvas.drawPicture(picture);
         canvas.restore();
+      } else {
+        // Changed line: paint directly, no PictureRecorder overhead
+        _painter.paintLine(
+          canvas,
+          offset.translate(0, lineY),
+          line,
+        );
+        // Evict stale cache entry
+        if (cached != null) {
+          cached.dispose();
+          _lineCache.remove(i);
+        }
       }
+      _prevLineVersions[i] = lineVersion;
     }
 
     // Evict cache entries outside visible range
@@ -557,6 +581,9 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       }
       return false;
     });
+    _prevLineVersions.removeWhere(
+      (key, _) => key < effectFirstLine || key > effectLastLine,
+    );
 
     if (_terminal.buffer.absoluteCursorY >= effectFirstLine &&
         _terminal.buffer.absoluteCursorY <= effectLastLine) {
