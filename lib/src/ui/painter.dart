@@ -81,6 +81,9 @@ class TerminalPainter {
   /// The size of each character in the terminal.
   Size get cellSize => _cellSize;
 
+  /// Reusable CellData buffer to avoid per-line allocation during paint.
+  final _cellData = CellData.empty();
+
   /// When the set of font available to the system changes, call this method to
   /// clear cached state related to font rendering.
   void clearFontCache() {
@@ -145,7 +148,7 @@ class TerminalPainter {
     Offset offset,
     BufferLine line,
   ) {
-    final cellData = CellData.empty();
+    final cellData = _cellData;
     final cellWidth = _cellSize.width;
 
     for (var i = 0; i < line.length; i++) {

@@ -156,10 +156,15 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   int _lastLineCount = -1;
   CellOffset? _lastNotifiedCursorPos;
   bool _contentChanged = false;
+  double _lastScrollOffset = -1;
 
   void _onScroll() {
     _stickToBottom = _scrollOffset >= _maxScrollExtent;
-    markNeedsLayout();
+    final currentOffset = _scrollOffset;
+    if (currentOffset != _lastScrollOffset) {
+      _lastScrollOffset = currentOffset;
+      markNeedsPaint();
+    }
     _notifyEditableRect();
   }
 
