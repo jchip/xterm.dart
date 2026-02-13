@@ -21,8 +21,8 @@ typedef EditableRectCallback = void Function(Rect rect, Rect caretRect);
 
 class _LinePicture {
   final Picture picture;
-  final int contentHash;
-  _LinePicture(this.picture, this.contentHash);
+  final int version;
+  _LinePicture(this.picture, this.version);
   void dispose() => picture.dispose();
 }
 
@@ -529,10 +529,9 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     for (var i = effectFirstLine; i <= effectLastLine; i++) {
       final line = lines[i];
       final lineY = (i * charHeight + _lineOffset).truncateToDouble();
-      final hash = _painter.computeLineHash(line);
 
       final cached = _lineCache[i];
-      if (cached != null && cached.contentHash == hash) {
+      if (cached != null && cached.version == line.version) {
         canvas.save();
         canvas.translate(offset.dx, offset.dy + lineY);
         canvas.drawPicture(cached.picture);
@@ -542,7 +541,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
         _painter.paintLine(Canvas(recorder), Offset.zero, line);
         final picture = recorder.endRecording();
         cached?.dispose();
-        _lineCache[i] = _LinePicture(picture, hash);
+        _lineCache[i] = _LinePicture(picture, line.version);
         canvas.save();
         canvas.translate(offset.dx, offset.dy + lineY);
         canvas.drawPicture(picture);

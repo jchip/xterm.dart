@@ -84,19 +84,6 @@ class TerminalPainter {
   /// Reusable CellData buffer to avoid per-line allocation during paint.
   final _cellData = CellData.empty();
 
-  /// Compute a content hash for a line. Used for line-level Picture caching
-  /// to detect when a line's visual output has changed.
-  @pragma('vm:prefer-inline')
-  int computeLineHash(BufferLine line) {
-    final cellData = _cellData;
-    var hash = 0;
-    for (var i = 0; i < line.length; i++) {
-      line.getCellData(i, cellData);
-      hash = 0x1fffffff & (hash * 31 + cellData.getHash());
-    }
-    return hash;
-  }
-
   /// When the set of font available to the system changes, call this method to
   /// clear cached state related to font rendering.
   void clearFontCache() {

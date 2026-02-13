@@ -31,6 +31,12 @@ class BufferLine with IndexedItem {
 
   var isWrapped = false;
 
+  /// Monotonically increasing version counter. Incremented on any mutation
+  /// to the line's cell data. Used by the renderer to detect changes and
+  /// skip repainting unchanged lines.
+  int _version = 0;
+  int get version => _version;
+
   int get length => _length;
 
   final _anchors = <CellAnchor>[];
@@ -80,18 +86,22 @@ class BufferLine with IndexedItem {
   }
 
   void setForeground(int index, int value) {
+    _version++;
     _data[index * _cellSize + _cellForeground] = value;
   }
 
   void setBackground(int index, int value) {
+    _version++;
     _data[index * _cellSize + _cellBackground] = value;
   }
 
   void setAttributes(int index, int value) {
+    _version++;
     _data[index * _cellSize + _cellAttributes] = value;
   }
 
   void setContent(int index, int value) {
+    _version++;
     _data[index * _cellSize + _cellContent] = value;
   }
 
@@ -101,6 +111,7 @@ class BufferLine with IndexedItem {
   }
 
   void setCell(int index, int char, int witdh, CursorStyle style) {
+    _version++;
     final offset = index * _cellSize;
     _data[offset + _cellForeground] = style.foreground;
     _data[offset + _cellBackground] = style.background;
@@ -109,6 +120,7 @@ class BufferLine with IndexedItem {
   }
 
   void setCellData(int index, CellData cellData) {
+    _version++;
     final offset = index * _cellSize;
     _data[offset + _cellForeground] = cellData.foreground;
     _data[offset + _cellBackground] = cellData.background;
@@ -117,6 +129,7 @@ class BufferLine with IndexedItem {
   }
 
   void eraseCell(int index, CursorStyle style) {
+    _version++;
     final offset = index * _cellSize;
     _data[offset + _cellForeground] = style.foreground;
     _data[offset + _cellBackground] = style.background;
@@ -125,6 +138,7 @@ class BufferLine with IndexedItem {
   }
 
   void resetCell(int index) {
+    _version++;
     final offset = index * _cellSize;
     _data[offset + _cellForeground] = 0;
     _data[offset + _cellBackground] = 0;
@@ -157,6 +171,7 @@ class BufferLine with IndexedItem {
     assert(start >= 0 && start < _length);
     assert(count >= 0 && start + count <= _length);
 
+    _version++;
     style ??= CursorStyle.empty;
 
     if (start + count < _length) {
@@ -191,6 +206,7 @@ class BufferLine with IndexedItem {
 
   /// Inserts [count] cells at [start]. New cells are initialized with [style].
   void insertCells(int start, int count, [CursorStyle? style]) {
+    _version++;
     style ??= CursorStyle.empty;
 
     if (start > 0 && getWidth(start - 1) == 2) {
@@ -235,6 +251,8 @@ class BufferLine with IndexedItem {
     if (length == _length) {
       return;
     }
+
+    _version++;
 
     if (length > _length) {
       final newBufferSize = _calcCapacity(length) * _cellSize;
@@ -287,6 +305,7 @@ class BufferLine with IndexedItem {
   /// Copies [len] cells from [src] starting at [srcCol] to [dstCol] at this
   /// line.
   void copyFrom(BufferLine src, int srcCol, int dstCol, int len) {
+    _version++;
     resize(dstCol + len);
 
     // data.setRange(
