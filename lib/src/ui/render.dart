@@ -596,7 +596,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
           canvas,
           offset + cursorOffset,
           cursorType: _cursorType,
-          hasFocus: _focusNode.hasFocus,
+          hasFocus: true,
         );
       }
     }
