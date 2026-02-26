@@ -2,6 +2,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+@visibleForTesting
+bool shouldResetBufferOnWordBoundary({
+  required bool enableSuggestions,
+  required TargetPlatform platform,
+}) {
+  // iOS suggestion acceptance commonly emits a trailing space and then
+  // expects backspace to operate on that accepted text. Resetting the
+  // editing buffer here breaks that flow and can stall deletion.
+  return !(enableSuggestions && platform == TargetPlatform.iOS);
+}
+
 class CustomTextEdit extends StatefulWidget {
   CustomTextEdit({
     super.key,
@@ -247,6 +258,13 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
     _connection?.setEditingState(_initEditingState);
   }
 
+  bool _shouldResetBufferOnWordBoundary() {
+    return shouldResetBufferOnWordBoundary(
+      enableSuggestions: widget.enableSuggestions,
+      platform: defaultTargetPlatform,
+    );
+  }
+
   @override
   TextEditingValue? get currentTextEditingValue {
     return _currentEditingState;
@@ -317,9 +335,20 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
         // Enter — clear buffer between commands
         _resetEditingBuffer();
       } else if (delta.endsWith(' ')) {
-        // Word boundary — clear buffer so backspace history doesn't pile up.
-        // Brief keyboard reinit is masked by the natural pause between words.
-        _resetEditingBuffer();
+        if (_shouldResetBufferOnWordBoundary()) {
+          // Word boundary — clear buffer so backspace history doesn't pile up.
+          // Brief keyboard reinit is masked by the natural pause between words.
+          _resetEditingBuffer();
+        } else {
+          // Keep accepted suggestion text in baseline on iOS so keyboard
+          // backspace continues deleting characters after auto-space.
+          _initEditingState = TextEditingValue(
+            text: _currentEditingState.text,
+            selection: TextSelection.collapsed(
+              offset: _currentEditingState.text.length,
+            ),
+          );
+        }
       } else {
         // Mid-word — track internally only, don't echo back to keyboard
         _initEditingState = TextEditingValue(

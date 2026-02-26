@@ -23,13 +23,17 @@ void main() {
       focusNode.dispose();
     });
 
-    Widget buildWidget({bool deleteDetection = false}) {
+    Widget buildWidget({
+      bool deleteDetection = false,
+      bool enableSuggestions = false,
+    }) {
       return MaterialApp(
         home: Scaffold(
           body: CustomTextEdit(
             focusNode: focusNode,
             autofocus: true,
             deleteDetection: deleteDetection,
+            enableSuggestions: enableSuggestions,
             onInsert: (text) => insertedTexts.add(text),
             onDelete: () => deleteCount++,
             onComposing: (text) => lastComposing = text,
@@ -83,6 +87,26 @@ void main() {
 
       expect(insertedTexts, equals(['hello', ' ']));
       expect(state.currentTextEditingValue!.text, equals(''));
+    });
+
+    test('does not reset on iOS when suggestions are enabled', () {
+      expect(
+        shouldResetBufferOnWordBoundary(
+          enableSuggestions: true,
+          platform: TargetPlatform.iOS,
+        ),
+        isFalse,
+      );
+    });
+
+    test('resets on Android when suggestions are enabled', () {
+      expect(
+        shouldResetBufferOnWordBoundary(
+          enableSuggestions: true,
+          platform: TargetPlatform.android,
+        ),
+        isTrue,
+      );
     });
 
     testWidgets('typing resumes after word boundary reset', (tester) async {
