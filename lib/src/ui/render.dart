@@ -22,7 +22,8 @@ typedef EditableRectCallback = void Function(Rect rect, Rect caretRect);
 class _LinePicture {
   final Picture picture;
   final int version;
-  _LinePicture(this.picture, this.version);
+  final Object lineRef;
+  _LinePicture(this.picture, this.version, this.lineRef);
   void dispose() => picture.dispose();
 }
 
@@ -172,6 +173,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   /// version matches on the next paint are considered stable and promoted
   /// to the Picture cache.
   final _prevLineVersions = <int, int>{};
+  final _prevLineRefs = <int, Object>{};
 
   void _clearLineCache() {
     for (final entry in _lineCache.values) {
@@ -179,6 +181,13 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     }
     _lineCache.clear();
     _prevLineVersions.clear();
+    _prevLineRefs.clear();
+  }
+
+  @visibleForTesting
+  bool debugIsLineCachedForIndex(int index, Object lineRef) {
+    final cached = _lineCache[index];
+    return cached != null && identical(cached.lineRef, lineRef);
   }
 
   int _lastLineCount = -1;
@@ -287,7 +296,9 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   /// The distance from the top of the terminal to the top of the viewport.
   double get _scrollOffset {
-    return _offset.pixels ~/ _painter.cellSize.height * _painter.cellSize.height;
+    return _offset.pixels ~/
+        _painter.cellSize.height *
+        _painter.cellSize.height;
   }
 
   /// The height of a terminal line in pixels. This includes the line spacing.
@@ -374,7 +385,8 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       final toLineEnd = CellOffset(_terminal.viewWidth, toOffset.y);
 
       // Select from the start of the earlier line to the end of the later line
-      final startOffset = fromOffset.y <= toOffset.y ? fromLineStart : toLineStart;
+      final startOffset =
+          fromOffset.y <= toOffset.y ? fromLineStart : toLineStart;
       final endOffset = fromOffset.y <= toOffset.y ? toLineEnd : fromLineEnd;
 
       _controller.setSelection(
@@ -417,7 +429,8 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   }
 
   void _notifyEditableRect() {
-    final cursorPos = CellOffset(_terminal.buffer.cursorX, _terminal.buffer.absoluteCursorY);
+    final cursorPos =
+        CellOffset(_terminal.buffer.cursorX, _terminal.buffer.absoluteCursorY);
     if (cursorPos == _lastNotifiedCursorPos) return;
     _lastNotifiedCursorPos = cursorPos;
 
@@ -540,19 +553,22 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       final lineVersion = line.version;
 
       final cached = _lineCache[i];
-      if (cached != null && cached.version == lineVersion) {
+      if (cached != null &&
+          cached.version == lineVersion &&
+          identical(cached.lineRef, line)) {
         // Cache hit: replay cached picture
         canvas.save();
         canvas.translate(offset.dx, offset.dy + lineY);
         canvas.drawPicture(cached.picture);
         canvas.restore();
-      } else if (_prevLineVersions[i] == lineVersion) {
+      } else if (_prevLineVersions[i] == lineVersion &&
+          identical(_prevLineRefs[i], line)) {
         // Stable line (same version as last frame): promote to cache
         final recorder = PictureRecorder();
         _painter.paintLine(Canvas(recorder), Offset.zero, line);
         final picture = recorder.endRecording();
         cached?.dispose();
-        _lineCache[i] = _LinePicture(picture, lineVersion);
+        _lineCache[i] = _LinePicture(picture, lineVersion, line);
         canvas.save();
         canvas.translate(offset.dx, offset.dy + lineY);
         canvas.drawPicture(picture);
@@ -571,6 +587,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
         }
       }
       _prevLineVersions[i] = lineVersion;
+      _prevLineRefs[i] = line;
     }
 
     // Evict cache entries outside visible range
@@ -582,6 +599,9 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       return false;
     });
     _prevLineVersions.removeWhere(
+      (key, _) => key < effectFirstLine || key > effectLastLine,
+    );
+    _prevLineRefs.removeWhere(
       (key, _) => key < effectFirstLine || key > effectLastLine,
     );
 
