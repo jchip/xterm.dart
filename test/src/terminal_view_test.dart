@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
+import 'package:xterm/src/ui/custom_text_edit.dart';
 import 'package:xterm/xterm.dart';
 
 import '../_fixture/_fixture.dart';
@@ -391,6 +392,33 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(terminalOutput.join(), '\x04');
+    });
+
+    testWidgets('deduplicates IME newline action and newline insert', (
+      tester,
+    ) async {
+      final terminalOutput = <String>[];
+      final terminal = Terminal(onOutput: terminalOutput.add);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TerminalView(terminal, autofocus: true),
+        ),
+      );
+      await tester.pump();
+
+      final editState = tester.state<CustomTextEditState>(
+        find.byType(CustomTextEdit),
+      );
+
+      editState.performAction(TextInputAction.newline);
+      editState.updateEditingValue(const TextEditingValue(
+        text: '\n',
+        selection: TextSelection.collapsed(offset: 1),
+      ));
+      await tester.pump();
+
+      expect(terminalOutput.join(), equals('\r'));
     });
 
     testWidgets('can convert text input to key events', (tester) async {

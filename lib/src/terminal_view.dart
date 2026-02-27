@@ -171,12 +171,14 @@ class TerminalViewState extends State<TerminalView> {
   final _viewportKey = GlobalKey();
 
   String? _composingText;
+  bool _pendingImeActionNewline = false;
 
   late TerminalController _controller;
 
   late ScrollController _scrollController;
 
-  RenderTerminal get renderTerminal => _viewportKey.currentContext!.findRenderObject() as RenderTerminal;
+  RenderTerminal get renderTerminal =>
+      _viewportKey.currentContext!.findRenderObject() as RenderTerminal;
 
   @override
   void initState() {
@@ -281,8 +283,16 @@ class TerminalViewState extends State<TerminalView> {
         onAction: (action) {
           _scrollToBottom();
           // Android sends TextInputAction.newline when the user presses the virtual keyboard's enter key.
-          if (action == TextInputAction.done || action == TextInputAction.newline) {
+          if (action == TextInputAction.done ||
+              action == TextInputAction.newline) {
             widget.terminal.keyInput(TerminalKey.enter);
+            // Some IMEs emit both performAction(newline) and a trailing text
+            // insertion of '\n' for a single keypress. Deduplicate the
+            // immediate insert event in the same frame.
+            _pendingImeActionNewline = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _pendingImeActionNewline = false;
+            });
           }
         },
         onKeyEvent: _handleKeyEvent,
@@ -317,8 +327,10 @@ class TerminalViewState extends State<TerminalView> {
       terminalController: _controller,
       onTapUp: _onTapUp,
       onTapDown: _onTapDown,
-      onSecondaryTapDown: widget.onSecondaryTapDown != null ? _onSecondaryTapDown : null,
-      onSecondaryTapUp: widget.onSecondaryTapUp != null ? _onSecondaryTapUp : null,
+      onSecondaryTapDown:
+          widget.onSecondaryTapDown != null ? _onSecondaryTapDown : null,
+      onSecondaryTapUp:
+          widget.onSecondaryTapUp != null ? _onSecondaryTapUp : null,
       readOnly: widget.readOnly,
       child: child,
     );
@@ -350,7 +362,8 @@ class TerminalViewState extends State<TerminalView> {
   }
 
   Rect get globalCursorRect {
-    return renderTerminal.localToGlobal(renderTerminal.cursorOffset) & renderTerminal.cellSize;
+    return renderTerminal.localToGlobal(renderTerminal.cursorOffset) &
+        renderTerminal.cellSize;
   }
 
   void _onTapUp(TapUpDetails details) {
@@ -387,10 +400,17 @@ class TerminalViewState extends State<TerminalView> {
   void _onInsert(String text) {
     // Handle newline from multiline keyboard (TextInputType.multiline sends \n as text)
     if (text == '\n' || text == '\r\n' || text == '\r') {
+      if (_pendingImeActionNewline) {
+        _pendingImeActionNewline = false;
+        _scrollToBottom();
+        return;
+      }
       widget.terminal.keyInput(TerminalKey.enter);
       _scrollToBottom();
       return;
     }
+
+    _pendingImeActionNewline = false;
 
     final key = charToTerminalKey(text.trim());
 
