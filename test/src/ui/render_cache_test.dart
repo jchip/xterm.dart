@@ -4,7 +4,7 @@ import 'package:xterm/xterm.dart';
 
 void main() {
   testWidgets(
-    'evicts stale cache when a different line object moves into same index',
+    'line picture cache is disabled for correctness under rapid redraw',
     (tester) async {
       final terminal = Terminal(maxLines: 300);
 
@@ -42,10 +42,9 @@ void main() {
       final nextLineRef = terminal.buffer.lines[targetIndex + 1];
 
       expect(identical(oldLineRef, nextLineRef), isFalse);
-
       expect(
         renderTerminal.debugIsLineCachedForIndex(targetIndex, oldLineRef),
-        isTrue,
+        isFalse,
       );
 
       terminal.write('\x1b[1S');
@@ -66,7 +65,7 @@ void main() {
 
       expect(
         renderTerminal.debugIsLineCachedForIndex(targetIndex, newLineRef),
-        isTrue,
+        isFalse,
       );
     },
   );

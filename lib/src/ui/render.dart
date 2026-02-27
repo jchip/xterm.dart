@@ -19,6 +19,10 @@ import 'package:xterm/src/ui/terminal_theme.dart';
 
 typedef EditableRectCallback = void Function(Rect rect, Rect caretRect);
 
+// Correctness-first guard: tmux can produce high-frequency redraw patterns
+// where stale line pictures are worse than extra paint cost.
+const _enableLinePictureCache = false;
+
 class _LinePicture {
   final Picture picture;
   final int version;
@@ -186,6 +190,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   @visibleForTesting
   bool debugIsLineCachedForIndex(int index, Object lineRef) {
+    if (!_enableLinePictureCache) return false;
     final cached = _lineCache[index];
     return cached != null && identical(cached.lineRef, lineRef);
   }
@@ -547,63 +552,80 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     final effectFirstLine = firstLine.clamp(0, lines.length - 1);
     final effectLastLine = lastLine.clamp(0, lines.length - 1);
 
-    for (var i = effectFirstLine; i <= effectLastLine; i++) {
-      final line = lines[i];
-      final lineY = (i * charHeight + _lineOffset).truncateToDouble();
-      final lineVersion = line.version;
+    if (!_enableLinePictureCache) {
+      if (_lineCache.isNotEmpty ||
+          _prevLineVersions.isNotEmpty ||
+          _prevLineRefs.isNotEmpty) {
+        _clearLineCache();
+      }
 
-      final cached = _lineCache[i];
-      if (cached != null &&
-          cached.version == lineVersion &&
-          identical(cached.lineRef, line)) {
-        // Cache hit: replay cached picture
-        canvas.save();
-        canvas.translate(offset.dx, offset.dy + lineY);
-        canvas.drawPicture(cached.picture);
-        canvas.restore();
-      } else if (_prevLineVersions[i] == lineVersion &&
-          identical(_prevLineRefs[i], line)) {
-        // Stable line (same version as last frame): promote to cache
-        final recorder = PictureRecorder();
-        _painter.paintLine(Canvas(recorder), Offset.zero, line);
-        final picture = recorder.endRecording();
-        cached?.dispose();
-        _lineCache[i] = _LinePicture(picture, lineVersion, line);
-        canvas.save();
-        canvas.translate(offset.dx, offset.dy + lineY);
-        canvas.drawPicture(picture);
-        canvas.restore();
-      } else {
-        // Changed line: paint directly, no PictureRecorder overhead
+      for (var i = effectFirstLine; i <= effectLastLine; i++) {
+        final lineY = (i * charHeight + _lineOffset).truncateToDouble();
         _painter.paintLine(
           canvas,
           offset.translate(0, lineY),
-          line,
+          lines[i],
         );
-        // Evict stale cache entry
-        if (cached != null) {
-          cached.dispose();
-          _lineCache.remove(i);
-        }
       }
-      _prevLineVersions[i] = lineVersion;
-      _prevLineRefs[i] = line;
-    }
+    } else {
+      for (var i = effectFirstLine; i <= effectLastLine; i++) {
+        final line = lines[i];
+        final lineY = (i * charHeight + _lineOffset).truncateToDouble();
+        final lineVersion = line.version;
 
-    // Evict cache entries outside visible range
-    _lineCache.removeWhere((key, entry) {
-      if (key < effectFirstLine || key > effectLastLine) {
-        entry.dispose();
-        return true;
+        final cached = _lineCache[i];
+        if (cached != null &&
+            cached.version == lineVersion &&
+            identical(cached.lineRef, line)) {
+          // Cache hit: replay cached picture
+          canvas.save();
+          canvas.translate(offset.dx, offset.dy + lineY);
+          canvas.drawPicture(cached.picture);
+          canvas.restore();
+        } else if (_prevLineVersions[i] == lineVersion &&
+            identical(_prevLineRefs[i], line)) {
+          // Stable line (same version as last frame): promote to cache
+          final recorder = PictureRecorder();
+          _painter.paintLine(Canvas(recorder), Offset.zero, line);
+          final picture = recorder.endRecording();
+          cached?.dispose();
+          _lineCache[i] = _LinePicture(picture, lineVersion, line);
+          canvas.save();
+          canvas.translate(offset.dx, offset.dy + lineY);
+          canvas.drawPicture(picture);
+          canvas.restore();
+        } else {
+          // Changed line: paint directly, no PictureRecorder overhead
+          _painter.paintLine(
+            canvas,
+            offset.translate(0, lineY),
+            line,
+          );
+          // Evict stale cache entry
+          if (cached != null) {
+            cached.dispose();
+            _lineCache.remove(i);
+          }
+        }
+        _prevLineVersions[i] = lineVersion;
+        _prevLineRefs[i] = line;
       }
-      return false;
-    });
-    _prevLineVersions.removeWhere(
-      (key, _) => key < effectFirstLine || key > effectLastLine,
-    );
-    _prevLineRefs.removeWhere(
-      (key, _) => key < effectFirstLine || key > effectLastLine,
-    );
+
+      // Evict cache entries outside visible range
+      _lineCache.removeWhere((key, entry) {
+        if (key < effectFirstLine || key > effectLastLine) {
+          entry.dispose();
+          return true;
+        }
+        return false;
+      });
+      _prevLineVersions.removeWhere(
+        (key, _) => key < effectFirstLine || key > effectLastLine,
+      );
+      _prevLineRefs.removeWhere(
+        (key, _) => key < effectFirstLine || key > effectLastLine,
+      );
+    }
 
     if (_terminal.buffer.absoluteCursorY >= effectFirstLine &&
         _terminal.buffer.absoluteCursorY <= effectLastLine) {
