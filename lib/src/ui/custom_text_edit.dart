@@ -13,6 +13,22 @@ bool shouldResetBufferOnWordBoundary({
   return !(enableSuggestions && platform == TargetPlatform.iOS);
 }
 
+@visibleForTesting
+bool shouldRearmDeleteDetectionBuffer({
+  required bool deleteDetection,
+  required TargetPlatform platform,
+  required int currentTextLength,
+  required int defaultTextLength,
+}) {
+  if (!deleteDetection) {
+    return false;
+  }
+  if (platform != TargetPlatform.iOS) {
+    return false;
+  }
+  return currentTextLength < defaultTextLength;
+}
+
 class CustomTextEdit extends StatefulWidget {
   CustomTextEdit({
     super.key,
@@ -258,6 +274,15 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
     _connection?.setEditingState(_initEditingState);
   }
 
+  bool _shouldRearmDeleteDetectionBuffer(TextEditingValue value) {
+    return shouldRearmDeleteDetectionBuffer(
+      deleteDetection: widget.deleteDetection,
+      platform: defaultTargetPlatform,
+      currentTextLength: value.text.length,
+      defaultTextLength: _defaultEditingState.text.length,
+    );
+  }
+
   bool _shouldResetBufferOnWordBoundary() {
     return shouldResetBufferOnWordBoundary(
       enableSuggestions: widget.enableSuggestions,
@@ -292,6 +317,10 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
     if (_currentEditingState.text.length < _initEditingState.text.length) {
       // Deletion
       widget.onDelete();
+      if (_shouldRearmDeleteDetectionBuffer(_currentEditingState)) {
+        _resetEditingBuffer();
+        return;
+      }
     } else if (_currentEditingState.text.startsWith(_initEditingState.text)) {
       // Simple append - send only the new characters
       final textDelta = _currentEditingState.text.substring(
@@ -305,8 +334,9 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
       // Find common prefix to minimize backspaces
       int commonPrefixLen = 0;
       while (commonPrefixLen < _initEditingState.text.length &&
-             commonPrefixLen < _currentEditingState.text.length &&
-             _initEditingState.text[commonPrefixLen] == _currentEditingState.text[commonPrefixLen]) {
+          commonPrefixLen < _currentEditingState.text.length &&
+          _initEditingState.text[commonPrefixLen] ==
+              _currentEditingState.text[commonPrefixLen]) {
         commonPrefixLen++;
       }
 
@@ -353,8 +383,8 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
         // Mid-word — track internally only, don't echo back to keyboard
         _initEditingState = TextEditingValue(
           text: _currentEditingState.text,
-          selection: TextSelection.collapsed(
-              offset: _currentEditingState.text.length),
+          selection:
+              TextSelection.collapsed(offset: _currentEditingState.text.length),
         );
       }
     }

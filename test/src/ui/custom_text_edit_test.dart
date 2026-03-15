@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xterm/src/ui/custom_text_edit.dart';
 
@@ -106,6 +105,27 @@ void main() {
           platform: TargetPlatform.android,
         ),
         isTrue,
+      );
+    });
+
+    test('rearms deleteDetection buffer only on iOS', () {
+      expect(
+        shouldRearmDeleteDetectionBuffer(
+          deleteDetection: true,
+          platform: TargetPlatform.iOS,
+          currentTextLength: 1,
+          defaultTextLength: 2,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldRearmDeleteDetectionBuffer(
+          deleteDetection: true,
+          platform: TargetPlatform.android,
+          currentTextLength: 1,
+          defaultTextLength: 2,
+        ),
+        isFalse,
       );
     });
 
