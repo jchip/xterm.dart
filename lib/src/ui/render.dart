@@ -44,6 +44,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     required FocusNode focusNode,
     required TerminalCursorType cursorType,
     required bool alwaysShowCursor,
+    Size? cellSizeOverride,
     EditableRectCallback? onEditableRect,
     String? composingText,
   })  : _terminal = terminal,
@@ -60,6 +61,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
           theme: theme,
           textStyle: textStyle,
           textScaler: textScaler,
+          cellSizeOverride: cellSizeOverride,
         );
 
   Terminal _terminal;
@@ -123,6 +125,13 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     _painter.theme = value;
     _clearLineCache();
     markNeedsPaint();
+  }
+
+  set cellSizeOverride(Size? value) {
+    if (value == _painter.cellSizeOverride) return;
+    _painter.cellSizeOverride = value;
+    _clearLineCache();
+    markNeedsLayout();
   }
 
   FocusNode _focusNode;

@@ -11,15 +11,18 @@ class TerminalPainter {
     required TerminalTheme theme,
     required TerminalStyle textStyle,
     required TextScaler textScaler,
+    Size? cellSizeOverride,
   })  : _textStyle = textStyle,
         _theme = theme,
-        _textScaler = textScaler;
+        _textScaler = textScaler,
+        _cellSizeOverride = _sanitizeCellSize(cellSizeOverride);
 
   /// A lookup table from terminal colors to Flutter colors.
   late var _colorPalette = PaletteBuilder(_theme).build();
 
   /// Size of each character in the terminal.
   late var _cellSize = _measureCharSize();
+  Size? _cellSizeOverride;
 
   /// The cached for cells in the terminal. Should be cleared when the same
   /// cell no longer produces the same visual output. For example, when
@@ -56,6 +59,23 @@ class TerminalPainter {
     _paragraphCache.clear();
   }
 
+  Size? get cellSizeOverride => _cellSizeOverride;
+  set cellSizeOverride(Size? value) {
+    final sanitized = _sanitizeCellSize(value);
+    if (sanitized == _cellSizeOverride) return;
+    _cellSizeOverride = sanitized;
+  }
+
+  static Size? _sanitizeCellSize(Size? value) {
+    if (value == null) return null;
+    final width = value.width;
+    final height = value.height;
+    if (!width.isFinite || !height.isFinite || width <= 0 || height <= 0) {
+      return null;
+    }
+    return value;
+  }
+
   Size _measureCharSize() {
     const test = 'mmmmmmmmmm';
 
@@ -79,7 +99,7 @@ class TerminalPainter {
   }
 
   /// The size of each character in the terminal.
-  Size get cellSize => _cellSize;
+  Size get cellSize => _cellSizeOverride ?? _cellSize;
 
   /// Reusable CellData buffer to avoid per-line allocation during paint.
   final _cellData = CellData.empty();

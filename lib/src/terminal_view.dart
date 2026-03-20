@@ -51,6 +51,7 @@ class TerminalView extends StatefulWidget {
     this.readOnly = false,
     this.hardwareKeyboardOnly = false,
     this.simulateScroll = true,
+    this.cellSizeOverride,
   });
 
   /// The underlying terminal that this widget renders.
@@ -155,6 +156,10 @@ class TerminalView extends StatefulWidget {
   /// emulators. True by default.
   final bool simulateScroll;
 
+  /// Optional external cell metrics override used when a parent needs render
+  /// layout, scroll snapping, and paint geometry to share the same cell size.
+  final Size? cellSizeOverride;
+
   @override
   State<TerminalView> createState() => TerminalViewState();
 }
@@ -249,6 +254,7 @@ class TerminalViewState extends State<TerminalView> {
           focusNode: _focusNode,
           cursorType: widget.cursorType,
           alwaysShowCursor: widget.alwaysShowCursor,
+          cellSizeOverride: widget.cellSizeOverride,
           onEditableRect: _onEditableRect,
           composingText: _composingText,
         );
@@ -504,6 +510,7 @@ class _TerminalView extends LeafRenderObjectWidget {
     required this.focusNode,
     required this.cursorType,
     required this.alwaysShowCursor,
+    this.cellSizeOverride,
     this.onEditableRect,
     this.composingText,
   });
@@ -530,6 +537,8 @@ class _TerminalView extends LeafRenderObjectWidget {
 
   final bool alwaysShowCursor;
 
+  final Size? cellSizeOverride;
+
   final EditableRectCallback? onEditableRect;
 
   final String? composingText;
@@ -548,6 +557,7 @@ class _TerminalView extends LeafRenderObjectWidget {
       focusNode: focusNode,
       cursorType: cursorType,
       alwaysShowCursor: alwaysShowCursor,
+      cellSizeOverride: cellSizeOverride,
       onEditableRect: onEditableRect,
       composingText: composingText,
     );
@@ -567,6 +577,7 @@ class _TerminalView extends LeafRenderObjectWidget {
       ..focusNode = focusNode
       ..cursorType = cursorType
       ..alwaysShowCursor = alwaysShowCursor
+      ..cellSizeOverride = cellSizeOverride
       ..onEditableRect = onEditableRect
       ..composingText = composingText;
   }

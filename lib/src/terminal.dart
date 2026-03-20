@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:math' show max;
 
 import 'package:xterm/src/base/observable.dart';
@@ -20,6 +21,9 @@ import 'package:xterm/src/core/state.dart';
 import 'package:xterm/src/core/tabs.dart';
 import 'package:xterm/src/utils/ascii.dart';
 import 'package:xterm/src/utils/circular_buffer.dart';
+
+const _altBufferWriteDrainMultiplier = 2;
+const _altBufferMaxWriteDrainBatchLength = 16 * 1024;
 
 /// [Terminal] is an interface to interact with command line applications. It
 /// translates escape sequences from the application into updates to the
@@ -84,13 +88,37 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
     this.onPrivateOSC,
     this.reflowEnabled = true,
     this.wordSeparators,
+    this.writeChunkSize,
+    this.altBufferNotifyInterval,
   });
+
+  /// Optional maximum number of UTF-16 code units to parse from inbound
+  /// [write] data in a single event-loop turn.
+  ///
+  /// When null, [write] is parsed synchronously. When set, inbound data is
+  /// queued and drained incrementally across event turns to avoid long UI
+  /// stalls under sustained high-output workloads.
+  final int? writeChunkSize;
+
+  /// Optional notification throttle applied only while the alternate buffer is
+  /// active. Parsing still advances the terminal state for every byte; only
+  /// intermediate repaint notifications are collapsed so the latest state wins.
+  final Duration? altBufferNotifyInterval;
+
+  /// Pending inbound write data that has been accepted by [write] but not yet
+  /// fully parsed by the terminal.
+  int get pendingWriteLength => _pendingWriteLength;
 
   late final _parser = EscapeParser(this);
 
   Timer? _parseFlushTimer;
+  Timer? _notifyTimer;
+  DateTime? _lastNotifyAt;
 
   bool _needsNotify = false;
+  bool _writeDrainScheduled = false;
+  final _pendingWrites = Queue<String>();
+  int _pendingWriteLength = 0;
 
   final _emitter = const EscapeEmitter();
 
@@ -227,28 +255,190 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
   bool reflowEnabled;
 
   void _scheduleNotify() {
-    if (!_needsNotify) {
-      _needsNotify = true;
-      scheduleMicrotask(() {
-        _needsNotify = false;
-        notifyListeners();
-      });
+    final notifyDelay = _resolveNotifyDelay();
+
+    if (_needsNotify) {
+      if (_notifyTimer != null && notifyDelay == Duration.zero) {
+        _notifyTimer?.cancel();
+        _notifyTimer = null;
+        scheduleMicrotask(_emitScheduledNotify);
+      }
+      return;
     }
+
+    _needsNotify = true;
+    if (notifyDelay == Duration.zero) {
+      scheduleMicrotask(_emitScheduledNotify);
+      return;
+    }
+
+    _notifyTimer = Timer(notifyDelay, _emitScheduledNotify);
+  }
+
+  Duration _resolveNotifyDelay() {
+    final interval = altBufferNotifyInterval;
+    if (interval == null || interval <= Duration.zero || !isUsingAltBuffer) {
+      return Duration.zero;
+    }
+
+    final lastNotifyAt = _lastNotifyAt;
+    if (lastNotifyAt == null) {
+      return Duration.zero;
+    }
+
+    final elapsed = DateTime.now().difference(lastNotifyAt);
+    if (elapsed >= interval) {
+      return Duration.zero;
+    }
+
+    return interval - elapsed;
+  }
+
+  void _emitScheduledNotify() {
+    _notifyTimer?.cancel();
+    _notifyTimer = null;
+    _needsNotify = false;
+    _lastNotifyAt = DateTime.now();
+    notifyListeners();
   }
 
   /// Writes the data from the underlying program to the terminal. Calling this
   /// updates the states of the terminal and emits events such as [onBell] or
   /// [onTitleChange] when the escape sequences in [data] request it.
   void write(String data) {
-    _parseFlushTimer?.cancel();
-    _parser.write(data);
-    if (_parser.hasPendingBytes) {
-      _parseFlushTimer = Timer(const Duration(milliseconds: 100), () {
-        _parser.flush();
-        _scheduleNotify();
-      });
+    if (data.isEmpty) {
+      return;
     }
+    _parseFlushTimer?.cancel();
+    if (writeChunkSize == null) {
+      _parser.write(data);
+      _schedulePendingParseFlushIfNeeded();
+      _scheduleNotify();
+      return;
+    }
+    _pendingWrites.addLast(data);
+    _pendingWriteLength += data.length;
+    _scheduleWriteDrain();
+  }
+
+  void _schedulePendingParseFlushIfNeeded() {
+    if (!_parser.hasPendingBytes) {
+      return;
+    }
+    _parseFlushTimer = Timer(const Duration(milliseconds: 100), () {
+      _parser.flush();
+      _scheduleNotify();
+    });
+  }
+
+  void _scheduleWriteDrain() {
+    if (_writeDrainScheduled || _pendingWriteLength == 0) {
+      return;
+    }
+    _writeDrainScheduled = true;
+    Timer.run(_drainPendingWrites);
+  }
+
+  void _drainPendingWrites() {
+    _writeDrainScheduled = false;
+    if (_pendingWriteLength == 0) {
+      _schedulePendingParseFlushIfNeeded();
+      return;
+    }
+
+    final chunkLength = writeChunkSize!;
+    final batchLength = _resolveWriteDrainBatchLength(chunkLength);
+    var remainingBatchLength = batchLength;
+    var drainedAny = false;
+
+    while (_pendingWriteLength > 0 && remainingBatchLength > 0) {
+      final nextChunkLength = remainingBatchLength < chunkLength
+          ? remainingBatchLength
+          : chunkLength;
+      final chunk = _takePendingWriteChunk(nextChunkLength);
+      if (chunk.isEmpty) {
+        break;
+      }
+      drainedAny = true;
+      remainingBatchLength -= chunk.length;
+      _parser.write(chunk);
+    }
+
+    if (!drainedAny) {
+      _schedulePendingParseFlushIfNeeded();
+      return;
+    }
+
     _scheduleNotify();
+
+    if (_pendingWriteLength > 0) {
+      _scheduleWriteDrain();
+      return;
+    }
+
+    _schedulePendingParseFlushIfNeeded();
+  }
+
+  String _takePendingWriteChunk(int maxLength) {
+    if (_pendingWriteLength == 0 || maxLength <= 0) {
+      return '';
+    }
+
+    final chunk = StringBuffer();
+    var remaining = maxLength;
+    while (remaining > 0 && _pendingWrites.isNotEmpty) {
+      final segment = _pendingWrites.removeFirst();
+      if (segment.length <= remaining) {
+        chunk.write(segment);
+        remaining -= segment.length;
+        _pendingWriteLength -= segment.length;
+        continue;
+      }
+
+      final splitAt = _resolveSafeWriteChunkEnd(segment, remaining);
+      chunk.write(segment.substring(0, splitAt));
+      _pendingWrites.addFirst(segment.substring(splitAt));
+      _pendingWriteLength -= splitAt;
+      remaining = 0;
+    }
+
+    return chunk.toString();
+  }
+
+  int _resolveSafeWriteChunkEnd(String segment, int maxLength) {
+    if (segment.length <= maxLength) {
+      return segment.length;
+    }
+    var splitAt = maxLength;
+    if (splitAt <= 0) {
+      return 0;
+    }
+    final lastCodeUnit = segment.codeUnitAt(splitAt - 1);
+    if (_isHighSurrogate(lastCodeUnit) && splitAt < segment.length) {
+      final nextCodeUnit = segment.codeUnitAt(splitAt);
+      if (_isLowSurrogate(nextCodeUnit)) {
+        splitAt -= 1;
+      }
+    }
+    return splitAt > 0 ? splitAt : maxLength;
+  }
+
+  bool _isHighSurrogate(int codeUnit) {
+    return codeUnit >= 0xD800 && codeUnit <= 0xDBFF;
+  }
+
+  bool _isLowSurrogate(int codeUnit) {
+    return codeUnit >= 0xDC00 && codeUnit <= 0xDFFF;
+  }
+
+  int _resolveWriteDrainBatchLength(int chunkLength) {
+    if (!isUsingAltBuffer || chunkLength <= 0) {
+      return chunkLength;
+    }
+    final scaledBatchLength = chunkLength * _altBufferWriteDrainMultiplier;
+    return scaledBatchLength <= _altBufferMaxWriteDrainBatchLength
+        ? scaledBatchLength
+        : _altBufferMaxWriteDrainBatchLength;
   }
 
   /// Sends a key event to the underlying program.

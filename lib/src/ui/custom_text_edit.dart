@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:async';
 
 @visibleForTesting
 bool shouldResetBufferOnWordBoundary({
@@ -27,6 +28,30 @@ bool shouldRearmDeleteDetectionBuffer({
     return false;
   }
   return currentTextLength < defaultTextLength;
+}
+
+@visibleForTesting
+String normalizeStaleReplayAfterNewlineResetText(String text) {
+  if (text.isEmpty) {
+    return text;
+  }
+  return text.replaceAll('\r', '').replaceAll('\n', '');
+}
+
+@visibleForTesting
+bool shouldIgnoreStaleReplayAfterNewlineReset({
+  required TargetPlatform platform,
+  required String? staleReplayText,
+  required String incomingText,
+}) {
+  if (platform != TargetPlatform.iOS) {
+    return false;
+  }
+  final expected = staleReplayText;
+  if (expected == null || expected.isEmpty) {
+    return false;
+  }
+  return normalizeStaleReplayAfterNewlineResetText(incomingText) == expected;
 }
 
 class CustomTextEdit extends StatefulWidget {
@@ -91,7 +116,12 @@ class CustomTextEdit extends StatefulWidget {
 }
 
 class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
+  static const Duration _staleReplayGuardDuration = Duration(
+    milliseconds: 150,
+  );
   TextInputConnection? _connection;
+  Timer? _staleReplayGuardTimer;
+  String? _staleReplayTextAfterNewlineReset;
 
   @override
   void initState() {
@@ -120,6 +150,7 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
   @override
   void dispose() {
     widget.focusNode.removeListener(_onFocusChange);
+    _staleReplayGuardTimer?.cancel();
     _closeInputConnectionIfNeeded();
     super.dispose();
   }
@@ -274,6 +305,29 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
     _connection?.setEditingState(_initEditingState);
   }
 
+  void _armStaleReplayGuardAfterNewlineReset(String previousText) {
+    _staleReplayGuardTimer?.cancel();
+    final normalizedPreviousText = normalizeStaleReplayAfterNewlineResetText(
+      previousText,
+    );
+    if (defaultTargetPlatform != TargetPlatform.iOS ||
+        normalizedPreviousText.isEmpty) {
+      _staleReplayTextAfterNewlineReset = null;
+      return;
+    }
+    _staleReplayTextAfterNewlineReset = normalizedPreviousText;
+    _staleReplayGuardTimer = Timer(_staleReplayGuardDuration, () {
+      _staleReplayTextAfterNewlineReset = null;
+      _staleReplayGuardTimer = null;
+    });
+  }
+
+  void _clearStaleReplayGuard() {
+    _staleReplayGuardTimer?.cancel();
+    _staleReplayGuardTimer = null;
+    _staleReplayTextAfterNewlineReset = null;
+  }
+
   bool _shouldRearmDeleteDetectionBuffer(TextEditingValue value) {
     return shouldRearmDeleteDetectionBuffer(
       deleteDetection: widget.deleteDetection,
@@ -313,6 +367,16 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
     }
 
     widget.onComposing(null);
+
+    if (shouldIgnoreStaleReplayAfterNewlineReset(
+      platform: defaultTargetPlatform,
+      staleReplayText: _staleReplayTextAfterNewlineReset,
+      incomingText: _currentEditingState.text,
+    )) {
+      _resetEditingBuffer();
+      _clearStaleReplayGuard();
+      return;
+    }
 
     if (_currentEditingState.text.length < _initEditingState.text.length) {
       // Deletion
@@ -363,8 +427,12 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
 
       if (delta.contains('\n')) {
         // Enter — clear buffer between commands
+        _armStaleReplayGuardAfterNewlineReset(
+          _currentEditingState.text,
+        );
         _resetEditingBuffer();
       } else if (delta.endsWith(' ')) {
+        _clearStaleReplayGuard();
         if (_shouldResetBufferOnWordBoundary()) {
           // Word boundary — clear buffer so backspace history doesn't pile up.
           // Brief keyboard reinit is masked by the natural pause between words.
@@ -380,6 +448,7 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
           );
         }
       } else {
+        _clearStaleReplayGuard();
         // Mid-word — track internally only, don't echo back to keyboard
         _initEditingState = TextEditingValue(
           text: _currentEditingState.text,
@@ -394,6 +463,7 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
   void performAction(TextInputAction action) {
     widget.onAction(action);
     if (action == TextInputAction.newline) {
+      _armStaleReplayGuardAfterNewlineReset(_currentEditingState.text);
       _resetEditingBuffer();
     }
   }

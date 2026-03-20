@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xterm/src/ui/custom_text_edit.dart';
@@ -129,6 +130,33 @@ void main() {
       );
     });
 
+    test('ignores newline-suffixed stale replay only on iOS', () {
+      expect(
+        shouldIgnoreStaleReplayAfterNewlineReset(
+          platform: TargetPlatform.iOS,
+          staleReplayText: 'ls',
+          incomingText: 'ls\n',
+        ),
+        isTrue,
+      );
+      expect(
+        shouldIgnoreStaleReplayAfterNewlineReset(
+          platform: TargetPlatform.iOS,
+          staleReplayText: 'ls',
+          incomingText: 'ls\r\n',
+        ),
+        isTrue,
+      );
+      expect(
+        shouldIgnoreStaleReplayAfterNewlineReset(
+          platform: TargetPlatform.android,
+          staleReplayText: 'ls',
+          incomingText: 'ls\n',
+        ),
+        isFalse,
+      );
+    });
+
     testWidgets('typing resumes after word boundary reset', (tester) async {
       await tester.pumpWidget(buildWidget());
       await tester.pump();
@@ -224,6 +252,65 @@ void main() {
       ));
 
       expect(insertedTexts, equals(['second']));
+    });
+
+    testWidgets('ignores iOS stale replay of submitted text with newline', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      try {
+        await tester.pumpWidget(buildWidget());
+        await tester.pump();
+        final state = getState(tester);
+
+        state.updateEditingValue(const TextEditingValue(
+          text: 'ls',
+          selection: TextSelection.collapsed(offset: 2),
+        ));
+        state.performAction(TextInputAction.newline);
+        insertedTexts.clear();
+
+        state.updateEditingValue(const TextEditingValue(
+          text: 'ls\n',
+          selection: TextSelection.collapsed(offset: 3),
+        ));
+
+        expect(insertedTexts, isEmpty);
+        expect(state.currentTextEditingValue!.text, equals(''));
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets('allows retyping same command after stale replay is ignored', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      try {
+        await tester.pumpWidget(buildWidget());
+        await tester.pump();
+        final state = getState(tester);
+
+        state.updateEditingValue(const TextEditingValue(
+          text: 'ls',
+          selection: TextSelection.collapsed(offset: 2),
+        ));
+        state.performAction(TextInputAction.newline);
+        insertedTexts.clear();
+
+        state.updateEditingValue(const TextEditingValue(
+          text: 'ls\n',
+          selection: TextSelection.collapsed(offset: 3),
+        ));
+        state.updateEditingValue(const TextEditingValue(
+          text: 'ls',
+          selection: TextSelection.collapsed(offset: 2),
+        ));
+
+        expect(insertedTexts, equals(['ls']));
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
 
     testWidgets('non-newline actions do not reset', (tester) async {

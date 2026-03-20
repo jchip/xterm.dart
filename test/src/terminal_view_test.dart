@@ -175,6 +175,81 @@ void main() {
     });
   });
 
+  group('TerminalView.cellSizeOverride', () {
+    testWidgets('drives render cell metrics when provided', (tester) async {
+      final terminal = Terminal();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 320,
+              height: 180,
+              child: TerminalView(
+                terminal,
+                autoResize: false,
+                textStyle: const TerminalStyle(fontSize: 32),
+                cellSizeOverride: const Size(9, 21),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final renderTerminal = tester.renderObject<RenderTerminal>(
+        find.byWidgetPredicate(
+          (widget) => widget.runtimeType.toString() == '_TerminalView',
+        ),
+      );
+
+      expect(renderTerminal.cellSize, const Size(9, 21));
+      expect(renderTerminal.lineHeight, 21);
+    });
+
+    testWidgets('updates render cell metrics when override changes', (
+      tester,
+    ) async {
+      final terminal = Terminal();
+      final override = ValueNotifier(const Size(8, 18));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ValueListenableBuilder<Size>(
+              valueListenable: override,
+              builder: (context, value, _) {
+                return SizedBox(
+                  width: 320,
+                  height: 180,
+                  child: TerminalView(
+                    terminal,
+                    autoResize: false,
+                    textStyle: const TerminalStyle(fontSize: 32),
+                    cellSizeOverride: value,
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      RenderTerminal renderTerminal() => tester.renderObject<RenderTerminal>(
+            find.byWidgetPredicate(
+              (widget) => widget.runtimeType.toString() == '_TerminalView',
+            ),
+          );
+
+      expect(renderTerminal().cellSize, const Size(8, 18));
+
+      override.value = const Size(11, 24);
+      await tester.pump();
+
+      expect(renderTerminal().cellSize, const Size(11, 24));
+      expect(renderTerminal().lineHeight, 24);
+    });
+  });
+
   group('TerminalController.pointerInputs', () {
     testWidgets('works', (tester) async {
       final output = <String>[];
