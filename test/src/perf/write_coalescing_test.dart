@@ -252,6 +252,34 @@ void main() {
       expect(terminal.buffer.lines[0].toString(), contains('AB'));
     });
 
+    test('alt buffer moderate backlog uses a mid-band notify cadence',
+        () async {
+      final terminal = Terminal(
+        writeChunkSize: 5,
+        altBufferNotifyInterval: const Duration(milliseconds: 100),
+      );
+      var notifyCount = 0;
+      terminal.addListener(() {
+        notifyCount++;
+      });
+
+      terminal.useAltBuffer();
+      terminal.write(List.filled(25, 'A').join());
+
+      await pumpEventTurn();
+      expect(notifyCount, 1);
+      expect(terminal.pendingWriteLength, 15);
+
+      await pumpEventTurn();
+      expect(notifyCount, 1);
+      expect(terminal.pendingWriteLength, 5);
+
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      expect(notifyCount, greaterThanOrEqualTo(2));
+      expect(terminal.buffer.lines[0].toString(), isNotEmpty);
+    });
+
     test('alt buffer heavy backlog still keeps the configured max throttle',
         () async {
       final terminal = Terminal(

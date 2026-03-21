@@ -25,6 +25,8 @@ import 'package:xterm/src/utils/circular_buffer.dart';
 const _altBufferWriteDrainMultiplier = 2;
 const _altBufferMaxWriteDrainBatchLength = 16 * 1024;
 const _altBufferSmoothNotifyInterval = Duration(milliseconds: 33);
+const _altBufferModerateNotifyInterval = Duration(milliseconds: 50);
+const _altBufferModerateBacklogBatchMultiplier = 2;
 
 /// [Terminal] is an interface to interact with command line applications. It
 /// translates escape sequences from the application into updates to the
@@ -282,10 +284,7 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
       return Duration.zero;
     }
 
-    final effectiveInterval =
-        _pendingWriteLength == 0 && interval > _altBufferSmoothNotifyInterval
-        ? _altBufferSmoothNotifyInterval
-        : interval;
+    final effectiveInterval = _resolveAltBufferEffectiveNotifyInterval(interval);
 
     final lastNotifyAt = _lastNotifyAt;
     if (lastNotifyAt == null) {
@@ -298,6 +297,30 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
     }
 
     return effectiveInterval - elapsed;
+  }
+
+  Duration _resolveAltBufferEffectiveNotifyInterval(Duration interval) {
+    if (_pendingWriteLength <= 0) {
+      return interval > _altBufferSmoothNotifyInterval
+          ? _altBufferSmoothNotifyInterval
+          : interval;
+    }
+
+    final chunkLength = writeChunkSize;
+    if (chunkLength == null || chunkLength <= 0) {
+      return interval;
+    }
+
+    final batchLength = _resolveWriteDrainBatchLength(chunkLength);
+    if (batchLength > 0 &&
+        _pendingWriteLength <=
+            batchLength * _altBufferModerateBacklogBatchMultiplier) {
+      return interval > _altBufferModerateNotifyInterval
+          ? _altBufferModerateNotifyInterval
+          : interval;
+    }
+
+    return interval;
   }
 
   void _emitScheduledNotify() {
