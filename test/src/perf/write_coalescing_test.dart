@@ -227,6 +227,59 @@ void main() {
       expect(terminal.buffer.lines[0].toString(), contains('ABC'));
     });
 
+    test('alt buffer low-backlog notifications recover to 33ms-class cadence',
+        () async {
+      final terminal = Terminal(
+        altBufferNotifyInterval: const Duration(milliseconds: 100),
+      );
+      var notifyCount = 0;
+      terminal.addListener(() {
+        notifyCount++;
+      });
+
+      terminal.useAltBuffer();
+      terminal.write('A');
+      await Future<void>.microtask(() {});
+      expect(notifyCount, 1);
+
+      terminal.write('B');
+      await Future<void>.microtask(() {});
+      expect(notifyCount, 1);
+
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+
+      expect(notifyCount, 2);
+      expect(terminal.buffer.lines[0].toString(), contains('AB'));
+    });
+
+    test('alt buffer heavy backlog still keeps the configured max throttle',
+        () async {
+      final terminal = Terminal(
+        writeChunkSize: 5,
+        altBufferNotifyInterval: const Duration(milliseconds: 100),
+      );
+      var notifyCount = 0;
+      terminal.addListener(() {
+        notifyCount++;
+      });
+
+      terminal.useAltBuffer();
+      terminal.write(List.filled(30, 'A').join());
+
+      await pumpEventTurn();
+      expect(notifyCount, 1);
+      expect(terminal.pendingWriteLength, greaterThan(0));
+
+      await pumpEventTurn();
+      expect(notifyCount, 1);
+
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      expect(notifyCount, 1);
+
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(notifyCount, greaterThanOrEqualTo(2));
+    });
+
     test('main buffer notifications stay immediate when alt throttle exists',
         () async {
       final terminal = Terminal(

@@ -24,6 +24,7 @@ import 'package:xterm/src/utils/circular_buffer.dart';
 
 const _altBufferWriteDrainMultiplier = 2;
 const _altBufferMaxWriteDrainBatchLength = 16 * 1024;
+const _altBufferSmoothNotifyInterval = Duration(milliseconds: 33);
 
 /// [Terminal] is an interface to interact with command line applications. It
 /// translates escape sequences from the application into updates to the
@@ -281,17 +282,22 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
       return Duration.zero;
     }
 
+    final effectiveInterval =
+        _pendingWriteLength == 0 && interval > _altBufferSmoothNotifyInterval
+        ? _altBufferSmoothNotifyInterval
+        : interval;
+
     final lastNotifyAt = _lastNotifyAt;
     if (lastNotifyAt == null) {
       return Duration.zero;
     }
 
     final elapsed = DateTime.now().difference(lastNotifyAt);
-    if (elapsed >= interval) {
+    if (elapsed >= effectiveInterval) {
       return Duration.zero;
     }
 
-    return interval - elapsed;
+    return effectiveInterval - elapsed;
   }
 
   void _emitScheduledNotify() {
