@@ -181,6 +181,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   /// Only populated for lines that were stable (unchanged) for 2 consecutive
   /// frames, avoiding PictureRecorder overhead during full-screen animations.
   final _lineCache = <int, _LinePicture>{};
+  final _viewportBackgroundPaint = Paint();
 
   /// Tracks the version of each line from the previous paint. Lines whose
   /// version matches on the next paint are considered stable and promoted
@@ -546,6 +547,8 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   void _paint(PaintingContext context, Offset offset) {
     final canvas = context.canvas;
+    _viewportBackgroundPaint.color = _painter.theme.background;
+    canvas.drawRect(offset & size, _viewportBackgroundPaint);
 
     final lines = _terminal.buffer.lines;
     final charHeight = _painter.cellSize.height;
