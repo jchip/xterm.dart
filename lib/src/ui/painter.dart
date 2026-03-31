@@ -148,6 +148,63 @@ class TerminalPainter {
     }
   }
 
+  Color resolveCursorForegroundColor() {
+    final cursorColor = _theme.cursor;
+    return cursorColor.computeLuminance() > 0.5
+        ? const Color(0xFF000000)
+        : const Color(0xFFFFFFFF);
+  }
+
+  @pragma('vm:prefer-inline')
+  void paintCellForegroundWithColor(
+    Canvas canvas,
+    Offset offset,
+    CellData cellData,
+    Color color,
+  ) {
+    final charCode = cellData.content & CellContent.codepointMask;
+    if (charCode == 0) return;
+
+    final cellFlags = cellData.flags;
+    final cacheKey = Object.hash(
+      cellData.foreground,
+      cellData.background,
+      cellData.flags,
+      cellData.content,
+      color.toARGB32(),
+      _textScaler,
+    );
+    var paragraph = _paragraphCache.getLayoutFromCache(cacheKey);
+
+    if (paragraph == null) {
+      var effectiveColor = color;
+      if (cellFlags & CellFlags.faint != 0) {
+        effectiveColor = effectiveColor.withValues(alpha: 0.5);
+      }
+
+      final style = _textStyle.toTextStyle(
+        color: effectiveColor,
+        bold: cellFlags & CellFlags.bold != 0,
+        italic: cellFlags & CellFlags.italic != 0,
+        underline: cellFlags & CellFlags.underline != 0,
+      );
+
+      var char = String.fromCharCode(charCode);
+      if (cellFlags & CellFlags.underline != 0 && charCode == 0x20) {
+        char = String.fromCharCode(0xA0);
+      }
+
+      paragraph = _paragraphCache.performAndCacheLayout(
+        char,
+        style,
+        _textScaler,
+        cacheKey,
+      );
+    }
+
+    canvas.drawParagraph(paragraph, offset);
+  }
+
   @pragma('vm:prefer-inline')
   void paintHighlight(Canvas canvas, Offset offset, int length, Color color) {
     final endOffset =
@@ -209,7 +266,7 @@ class TerminalPainter {
           : resolveBackgroundColor(cellData.background);
 
       if (cellData.flags & CellFlags.faint != 0) {
-        color = color.withOpacity(0.5);
+        color = color.withValues(alpha: 0.5);
       }
 
       final style = _textStyle.toTextStyle(

@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
+import 'package:xterm/src/core/cell.dart';
 import 'package:xterm/src/core/buffer/cell_offset.dart';
 import 'package:xterm/src/core/buffer/range.dart';
 import 'package:xterm/src/core/buffer/range_line.dart';
@@ -750,6 +751,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
           cursorType: _cursorType,
           hasFocus: true,
         );
+        _paintBlockCursorGlyph(canvas, offset + cursorOffset);
       }
     }
 
@@ -799,6 +801,32 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     paragraph.layout(ParagraphConstraints(width: size.width));
 
     canvas.drawParagraph(paragraph, Offset(0, offset.dy));
+  }
+
+  void _paintBlockCursorGlyph(Canvas canvas, Offset offset) {
+    if (_cursorType != TerminalCursorType.block) {
+      return;
+    }
+
+    final row = _terminal.buffer.absoluteCursorY;
+    if (row < 0 || row >= _terminal.buffer.lines.length) {
+      return;
+    }
+
+    final column = _terminal.buffer.cursorX;
+    final line = _terminal.buffer.lines[row];
+    if (column < 0 || column >= line.length) {
+      return;
+    }
+
+    final cellData = CellData.empty();
+    line.getCellData(column, cellData);
+    _painter.paintCellForegroundWithColor(
+      canvas,
+      offset,
+      cellData,
+      _painter.resolveCursorForegroundColor(),
+    );
   }
 
   void _paintSelection(
