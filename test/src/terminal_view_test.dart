@@ -293,6 +293,58 @@ void main() {
         const CellOffset(1, 3),
       );
     });
+
+    testWidgets(
+      'selectVisibleTextNearViewportCenter prefers visible non-empty rows',
+      (tester) async {
+        final terminal = Terminal();
+        final controller = TerminalController();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 100,
+                height: 120,
+                child: TerminalView(
+                  terminal,
+                  controller: controller,
+                  textStyle: const TerminalStyle(fontSize: 32),
+                  cellSizeOverride: const Size(10, 10),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        terminal.resize(10, 12);
+        terminal.write('top line\r\nalpha\r\n');
+        await tester.pump();
+
+        final renderTerminal = tester.renderObject<RenderTerminal>(
+          find.byWidgetPredicate(
+            (widget) => widget.runtimeType.toString() == '_TerminalView',
+          ),
+        );
+
+        expect(
+          renderTerminal.getVisibleNonEmptyBufferRows(maxRows: 12),
+          [
+            (row: 0, text: 'top line'),
+            (row: 1, text: 'alpha'),
+          ],
+        );
+        expect(renderTerminal.getPreferredVisibleNonEmptyBufferRow(), 1);
+        expect(renderTerminal.selectVisibleTextNearViewportCenter(), isTrue);
+
+        final selection = controller.selection;
+        expect(selection, isNotNull);
+        expect(
+          <String>{'top', 'line', 'top line', 'alpha'},
+          contains(terminal.buffer.getText(selection!).trim()),
+        );
+      },
+    );
   });
 
   group('TerminalController.pointerInputs', () {

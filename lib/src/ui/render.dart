@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:xterm/src/core/buffer/cell_offset.dart';
 import 'package:xterm/src/core/buffer/range.dart';
+import 'package:xterm/src/core/buffer/range_line.dart';
 import 'package:xterm/src/core/buffer/segment.dart';
 import 'package:xterm/src/core/mouse/button.dart';
 import 'package:xterm/src/core/mouse/button_state.dart';
@@ -356,6 +357,98 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       col.clamp(0, _terminal.viewWidth - 1),
       row.clamp(0, _terminal.buffer.lines.length - 1),
     );
+  }
+
+  List<({int row, String text})> getVisibleNonEmptyBufferRows({int? maxRows}) {
+    if (!hasSize || _terminal.buffer.lines.length < 1) {
+      return const [];
+    }
+
+    final firstVisibleRow = getBufferCellOffset(Offset.zero).y;
+    final lastVisibleRow = getBufferCellOffset(
+      Offset(max(0.0, size.width - 1), max(0.0, size.height - 1)),
+    ).y;
+    final rows = <({int row, String text})>[];
+
+    for (var row = firstVisibleRow; row <= lastVisibleRow; row++) {
+      final text = _terminal.buffer
+          .getText(
+            BufferRangeLine(
+              CellOffset(0, row),
+              CellOffset(_terminal.viewWidth, row),
+            ),
+          )
+          .trim();
+      if (text.isEmpty) {
+        continue;
+      }
+      rows.add((row: row, text: text));
+      if (maxRows != null && rows.length >= maxRows) {
+        break;
+      }
+    }
+
+    return rows;
+  }
+
+  int? getPreferredVisibleNonEmptyBufferRow() {
+    final visibleRows = getVisibleNonEmptyBufferRows();
+    if (visibleRows.isEmpty) {
+      return null;
+    }
+
+    final firstVisibleRow = getBufferCellOffset(Offset.zero).y;
+    final lastVisibleRow = getBufferCellOffset(
+      Offset(max(0.0, size.width - 1), max(0.0, size.height - 1)),
+    ).y;
+    final preferredRow = ((firstVisibleRow + lastVisibleRow) / 2).round();
+
+    var bestRow = visibleRows.first.row;
+    var bestDistance = (bestRow - preferredRow).abs();
+    for (final row in visibleRows.skip(1)) {
+      final distance = (row.row - preferredRow).abs();
+      if (distance < bestDistance) {
+        bestRow = row.row;
+        bestDistance = distance;
+        continue;
+      }
+      if (distance == bestDistance && row.row > bestRow) {
+        bestRow = row.row;
+      }
+    }
+    return bestRow;
+  }
+
+  bool selectVisibleTextNearViewportCenter({
+    List<double> columnFractions = const [0.18, 0.32, 0.5, 0.68],
+  }) {
+    if (!hasSize) {
+      return false;
+    }
+
+    final targetRow = getPreferredVisibleNonEmptyBufferRow();
+    final probeY = targetRow == null
+        ? size.height * 0.5
+        : (getOffset(CellOffset(0, targetRow)).dy + (lineHeight * 0.5))
+            .clamp(0.0, max(0.0, size.height - 1))
+            .toDouble();
+
+    _controller.clearSelection();
+
+    for (final columnFraction in columnFractions) {
+      selectWord(Offset(size.width * columnFraction, probeY));
+      final selection = _controller.selection;
+      if (selection != null &&
+          _terminal.buffer.getText(selection).trim().isNotEmpty) {
+        return true;
+      }
+      _controller.clearSelection();
+    }
+
+    selectLine(Offset(size.width * 0.5, probeY));
+    final selection = _controller.selection;
+    return selection != null &&
+        _terminal.buffer.getText(selection).trim().isNotEmpty;
   }
 
   /// Selects entire words in the terminal that contains [from] and [to].
