@@ -136,6 +136,30 @@ void main() {
       expect(terminal.buffer.lines[8].toString(), 'line9');
       expect(terminal.buffer.lines[9].toString(), 'line10');
     });
+
+    test('keeps alt-buffer lines attached after deleteLines', () {
+      final terminal = Terminal();
+      terminal.resize(10, 5);
+      terminal.useAltBuffer();
+
+      terminal.write('line1\r\n');
+      terminal.write('line2\r\n');
+      terminal.write('line3\r\n');
+      terminal.write('line4\r\n');
+      terminal.write('line5');
+
+      terminal.setMargins(0, 4);
+      terminal.setCursor(0, 1);
+      terminal.buffer.deleteLines(1);
+
+      for (var i = 0; i < terminal.buffer.lines.length; i++) {
+        expect(
+          terminal.buffer.lines[i].attached,
+          isTrue,
+          reason: 'alt-buffer line $i should stay attached after deleteLines',
+        );
+      }
+    });
   });
 
   group('Buffer.insertLines()', () {
@@ -344,6 +368,38 @@ void main() {
       expect(terminal.buffer.lines[3].toString(), startsWith('second1'));
       expect(terminal.buffer.lines[4].toString(), startsWith('second2'));
       expect(terminal.buffer.lines[5].toString(), startsWith('second3'));
+    });
+  });
+
+  group('Alt buffer line attachment', () {
+    test('keeps visible lines attached after scrollUp', () {
+      final terminal = Terminal();
+      terminal.resize(10, 3);
+      terminal.useAltBuffer();
+
+      terminal.write('one\r\n');
+      terminal.write('two\r\n');
+      terminal.write('three\r\n');
+      terminal.write('four\r\n');
+      terminal.write('five');
+
+      final visibleLines = <String>[];
+      terminal.buffer.lines.forEach((line) {
+        visibleLines.add(line.toString());
+      });
+
+      expect(
+        visibleLines,
+        ['three', 'four', 'five'],
+      );
+
+      for (var i = 0; i < terminal.buffer.lines.length; i++) {
+        expect(
+          terminal.buffer.lines[i].attached,
+          isTrue,
+          reason: 'alt-buffer line $i should stay attached after scrollUp',
+        );
+      }
     });
   });
 }

@@ -435,8 +435,12 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
     _controller.clearSelection();
 
-    for (final columnFraction in columnFractions) {
-      selectWord(Offset(size.width * columnFraction, probeY));
+    for (var probeIndex = 0;
+        probeIndex < columnFractions.length;
+        probeIndex++) {
+      final columnFraction = columnFractions[probeIndex];
+      final probeOffset = Offset(size.width * columnFraction, probeY);
+      selectWord(probeOffset);
       final selection = _controller.selection;
       if (selection != null &&
           _terminal.buffer.getText(selection).trim().isNotEmpty) {
@@ -445,7 +449,8 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       _controller.clearSelection();
     }
 
-    selectLine(Offset(size.width * 0.5, probeY));
+    final fallbackOffset = Offset(size.width * 0.5, probeY);
+    selectLine(fallbackOffset);
     final selection = _controller.selection;
     return selection != null &&
         _terminal.buffer.getText(selection).trim().isNotEmpty;

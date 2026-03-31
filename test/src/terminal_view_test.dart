@@ -345,6 +345,60 @@ void main() {
         );
       },
     );
+
+    testWidgets(
+      'selectVisibleTextNearViewportCenter works after alt-buffer scroll',
+      (tester) async {
+        final terminal = Terminal();
+        final controller = TerminalController();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 100,
+                height: 30,
+                child: TerminalView(
+                  terminal,
+                  controller: controller,
+                  autoResize: false,
+                  textStyle: const TerminalStyle(fontSize: 32),
+                  cellSizeOverride: const Size(10, 10),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        terminal.resize(10, 3);
+        terminal.useAltBuffer();
+        terminal.write('one\r\ntwo\r\nthree\r\nfour\r\nfive');
+        await tester.pump();
+
+        final renderTerminal = tester.renderObject<RenderTerminal>(
+          find.byWidgetPredicate(
+            (widget) => widget.runtimeType.toString() == '_TerminalView',
+          ),
+        );
+
+        expect(
+          renderTerminal.getVisibleNonEmptyBufferRows(maxRows: 12),
+          [
+            (row: 0, text: 'three'),
+            (row: 1, text: 'four'),
+            (row: 2, text: 'five'),
+          ],
+        );
+        expect(renderTerminal.selectVisibleTextNearViewportCenter(), isTrue);
+
+        final selection = controller.selection;
+        expect(selection, isNotNull);
+        expect(
+          <String>{'three', 'four', 'five'},
+          contains(terminal.buffer.getText(selection!).trim()),
+        );
+      },
+    );
   });
 
   group('TerminalController.pointerInputs', () {

@@ -223,22 +223,22 @@ class Buffer {
     currentLine.eraseRange(start, start + count, terminal.cursor);
   }
 
-  void scrollDown(int lines) {
+  void scrollDown(int count) {
     for (var i = absoluteMarginBottom; i >= absoluteMarginTop; i--) {
-      if (i >= absoluteMarginTop + lines) {
-        this.lines[i] = this.lines[i - lines];
+      if (i >= absoluteMarginTop + count) {
+        lines[i] = lines.swap(i - count, _newEmptyLine());
       } else {
-        this.lines[i] = _newEmptyLine();
+        lines[i] = _newEmptyLine();
       }
     }
   }
 
-  void scrollUp(int lines) {
+  void scrollUp(int count) {
     for (var i = absoluteMarginTop; i <= absoluteMarginBottom; i++) {
-      if (i <= absoluteMarginBottom - lines) {
-        this.lines[i] = this.lines[i + lines];
+      if (i <= absoluteMarginBottom - count) {
+        lines[i] = lines.swap(i + count, _newEmptyLine());
       } else {
-        this.lines[i] = _newEmptyLine();
+        lines[i] = _newEmptyLine();
       }
     }
   }
@@ -450,7 +450,7 @@ class Buffer {
 
     for (var i = 0; i < linesToMove; i++) {
       final index = absoluteCursorY + i;
-      lines[index] = lines[index + count];
+      lines[index] = lines.swap(index + count, _newEmptyLine());
     }
 
     for (var i = 0; i < count; i++) {
