@@ -250,6 +250,51 @@ void main() {
     });
   });
 
+  group('RenderTerminal cell offset mapping', () {
+    testWidgets('getBufferCellOffset includes scrollback offset',
+        (tester) async {
+      final terminal = Terminal();
+      final scrollController = ScrollController();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 100,
+              height: 40,
+              child: TerminalView(
+                terminal,
+                scrollController: scrollController,
+                textStyle: const TerminalStyle(fontSize: 32),
+                cellSizeOverride: const Size(10, 10),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      terminal.write(
+          '${List.generate(12, (index) => 'line $index').join('\r\n')}\r\n');
+      await tester.pump();
+
+      scrollController.jumpTo(20);
+      await tester.pump();
+
+      final renderTerminal = tester.renderObject<RenderTerminal>(
+        find.byWidgetPredicate(
+          (widget) => widget.runtimeType.toString() == '_TerminalView',
+        ),
+      );
+
+      const localPoint = Offset(15, 15);
+      expect(renderTerminal.getCellOffset(localPoint), const CellOffset(1, 1));
+      expect(
+        renderTerminal.getBufferCellOffset(localPoint),
+        const CellOffset(1, 3),
+      );
+    });
+  });
+
   group('TerminalController.pointerInputs', () {
     testWidgets('works', (tester) async {
       final output = <String>[];
