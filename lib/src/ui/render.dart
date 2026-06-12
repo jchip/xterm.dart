@@ -532,13 +532,37 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     }
   }
 
+  /// The last cell a motion report was sent for, so movement within one cell
+  /// doesn't flood the terminal with duplicate reports.
+  CellOffset? _lastMotionReportCell;
+
+  /// Whether the terminal consumed the last (possibly deduplicated) motion
+  /// event — replayed for same-cell motion so callers see a stable answer.
+  bool _lastMotionReportHandled = false;
+
   /// Send a mouse event at [offset] with [button] being currently in [buttonState].
+  ///
+  /// Motion events ([TerminalMouseButtonState.moved]) are deduplicated per
+  /// cell: only the first motion within a cell is forwarded to the terminal.
   bool mouseEvent(
     TerminalMouseButton button,
     TerminalMouseButtonState buttonState,
     Offset offset,
   ) {
     final position = getCellOffset(offset);
+    if (buttonState == TerminalMouseButtonState.moved) {
+      if (position == _lastMotionReportCell) {
+        return _lastMotionReportHandled;
+      }
+      _lastMotionReportCell = position;
+      _lastMotionReportHandled =
+          _terminal.mouseInput(button, buttonState, position);
+      return _lastMotionReportHandled;
+    }
+    // A press/release anchors the dedup cell, so a subsequent drag reports
+    // motion only once the pointer leaves the cell it went down in.
+    _lastMotionReportCell = position;
+    _lastMotionReportHandled = false;
     return _terminal.mouseInput(button, buttonState, position);
   }
 

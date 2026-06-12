@@ -12,6 +12,10 @@ enum TerminalMouseButton {
   wheelLeft(id: 66, isWheel: true),
 
   wheelRight(id: 67, isWheel: true),
+
+  /// No button held — used for any-event (DECSET 1003) motion reports. Id 3 is
+  /// the "no button / release" code, so motion encodes as 3 + 32 = 35.
+  none(id: 3),
   ;
 
   /// The id that is used to report a button press or release to the terminal.

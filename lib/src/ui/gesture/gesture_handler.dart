@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:xterm/src/core/mouse/button.dart';
 import 'package:xterm/src/core/mouse/button_state.dart';
+import 'package:xterm/src/core/mouse/mode.dart';
 import 'package:xterm/src/terminal_view.dart';
 import 'package:xterm/src/ui/controller.dart';
 import 'package:xterm/src/ui/gesture/gesture_detector.dart';
@@ -89,6 +90,24 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
       !widget.readOnly &&
       widget.terminalController.shouldSendPointerInput(PointerInput.tap);
 
+  bool get _shouldSendDragEvent =>
+      !widget.readOnly &&
+      widget.terminalController.shouldSendPointerInput(PointerInput.drag);
+
+  /// Whether the terminal owns the current drag (motion-tracking mouse mode
+  /// active and drag forwarding enabled) — local selection is skipped then.
+  bool _dragReportsToTerminal = false;
+
+  /// Last drag position, so the terminating button-release report (which
+  /// carries no position of its own) lands on the right cell.
+  Offset? _lastDragPosition;
+
+  /// Whether the current pointer interaction already reported a button press
+  /// to the terminal. A fast drag never fires onTapDown (the pan recognizer
+  /// wins the arena first), so onDragStart must supply the press itself —
+  /// but only when the tap path hasn't already done so.
+  bool _downReportedToTerminal = false;
+
   void _tapDown(
     GestureTapDownCallback? callback,
     TapDownDetails details,
@@ -103,6 +122,7 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
         TerminalMouseButtonState.down,
         details.localPosition,
       );
+      _downReportedToTerminal = handled;
     }
     // If the event was not handled by the terminal, use the supplied callback.
     if (!handled || forceCallback) {
@@ -124,6 +144,7 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
         TerminalMouseButtonState.up,
         details.localPosition,
       );
+      _downReportedToTerminal = false;
     }
     // If the event was not handled by the terminal, use the supplied callback.
     if (!handled || forceCallback) {
@@ -188,6 +209,28 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
 
   void onDragStart(DragStartDetails details) {
     _lastDragStartDetails = details;
+    _lastDragPosition = details.localPosition;
+
+    // When the application opted into drag forwarding and the terminal is in
+    // a motion-tracking mouse mode (DECSET 1002/1003), the terminal owns the
+    // drag: report motion instead of extending the local selection. The
+    // initial button press was already reported by the tap-down path.
+    final mouseMode = terminalView.widget.terminal.mouseMode;
+    _dragReportsToTerminal = _shouldSendDragEvent &&
+        (mouseMode == MouseMode.upDownScrollDrag ||
+            mouseMode == MouseMode.upDownScrollMove);
+    if (_dragReportsToTerminal) {
+      // A fast drag wins the gesture arena before onTapDown can fire, so the
+      // press may not have been reported yet.
+      if (!_downReportedToTerminal) {
+        _downReportedToTerminal = renderTerminal.mouseEvent(
+          TerminalMouseButton.left,
+          TerminalMouseButtonState.down,
+          details.localPosition,
+        );
+      }
+      return;
+    }
 
     if (_dragSelectionMode == null) {
       _dragSelectionMode = details.kind == PointerDeviceKind.mouse
@@ -209,6 +252,17 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void onDragUpdate(DragUpdateDetails details) {
+    _lastDragPosition = details.localPosition;
+
+    if (_dragReportsToTerminal) {
+      renderTerminal.mouseEvent(
+        TerminalMouseButton.left,
+        TerminalMouseButtonState.moved,
+        details.localPosition,
+      );
+      return;
+    }
+
     switch (_dragSelectionMode!) {
       case _SelectionMode.word:
         renderTerminal.selectWord(
@@ -232,6 +286,19 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void onDragEnd(DragEndDetails details) {
+    if (_dragReportsToTerminal) {
+      // Close the terminal-owned drag with a release on the last known cell
+      // (DragEndDetails carries no position).
+      if (_lastDragPosition != null) {
+        renderTerminal.mouseEvent(
+          TerminalMouseButton.left,
+          TerminalMouseButtonState.up,
+          _lastDragPosition!,
+        );
+      }
+      _dragReportsToTerminal = false;
+      _downReportedToTerminal = false;
+    }
     _dragSelectionMode = null;
   }
 }

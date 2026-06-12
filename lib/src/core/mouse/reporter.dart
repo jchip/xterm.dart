@@ -17,8 +17,10 @@ abstract class MouseReporter {
     switch (reportMode) {
       case MouseReportMode.normal:
       case MouseReportMode.utf:
-        // Button ID 3 is used to signal a button release.
-        final buttonID = state == TerminalMouseButtonState.up ? 3 : button.id;
+        // Button ID 3 is used to signal a button release. Motion reports add
+        // 32 to the button code (xterm "button-motion" flag).
+        final buttonID = (state == TerminalMouseButtonState.up ? 3 : button.id) +
+            (state == TerminalMouseButtonState.moved ? 32 : 0);
         // The button ID is reported as shifted by 32 to produce a printable
         // character.
         final btn = String.fromCharCode(32 + buttonID);
@@ -35,13 +37,17 @@ abstract class MouseReporter {
             : String.fromCharCode(32 + y);
         return "\x1b[M$btn$col$row";
       case MouseReportMode.sgr:
-        final buttonID = button.id;
-        final upDown = state == TerminalMouseButtonState.down ? 'M' : 'm';
+        // Motion reports add 32 to the button code and keep the trailing 'M'
+        // (only releases use 'm' in SGR mode).
+        final buttonID = button.id +
+            (state == TerminalMouseButtonState.moved ? 32 : 0);
+        final upDown = state == TerminalMouseButtonState.up ? 'm' : 'M';
         return "\x1b[<$buttonID;$x;$y$upDown";
       case MouseReportMode.urxvt:
         // The button ID uses the same id as to report it as in normal mode.
-        final buttonID =
-            32 + (state == TerminalMouseButtonState.up ? 3 : button.id);
+        final buttonID = 32 +
+            (state == TerminalMouseButtonState.up ? 3 : button.id) +
+            (state == TerminalMouseButtonState.moved ? 32 : 0);
         return "\x1b[$buttonID;$x;${y}M";
     }
   }

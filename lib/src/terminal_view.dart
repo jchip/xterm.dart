@@ -4,6 +4,9 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:xterm/src/core/buffer/cell_offset.dart';
 import 'package:xterm/src/core/input/keys.dart';
+import 'package:xterm/src/core/mouse/button.dart';
+import 'package:xterm/src/core/mouse/button_state.dart';
+import 'package:xterm/src/core/mouse/mode.dart';
 import 'package:xterm/src/terminal.dart';
 import 'package:xterm/src/ui/controller.dart';
 import 'package:xterm/src/ui/cursor_type.dart';
@@ -12,6 +15,7 @@ import 'package:xterm/src/ui/gesture/gesture_handler.dart';
 import 'package:xterm/src/ui/input_map.dart';
 import 'package:xterm/src/ui/keyboard_listener.dart';
 import 'package:xterm/src/ui/keyboard_visibility.dart';
+import 'package:xterm/src/ui/pointer_input.dart';
 import 'package:xterm/src/ui/render.dart';
 import 'package:xterm/src/ui/scroll_handler.dart';
 import 'package:xterm/src/ui/shortcut/actions.dart';
@@ -343,6 +347,7 @@ class TerminalViewState extends State<TerminalView> {
 
     child = MouseRegion(
       cursor: widget.mouseCursor,
+      onHover: _onMouseHover,
       child: child,
     );
 
@@ -353,6 +358,20 @@ class TerminalViewState extends State<TerminalView> {
     );
 
     return child;
+  }
+
+  /// Forward no-button pointer motion as any-event (DECSET 1003) mouse
+  /// reports when the application opted into [PointerInput.move]. Per-cell
+  /// deduplication happens in [RenderTerminal.mouseEvent].
+  void _onMouseHover(PointerHoverEvent event) {
+    if (widget.readOnly) return;
+    if (!_controller.shouldSendPointerInput(PointerInput.move)) return;
+    if (widget.terminal.mouseMode != MouseMode.upDownScrollMove) return;
+    renderTerminal.mouseEvent(
+      TerminalMouseButton.none,
+      TerminalMouseButtonState.moved,
+      renderTerminal.globalToLocal(event.position),
+    );
   }
 
   void requestKeyboard() {

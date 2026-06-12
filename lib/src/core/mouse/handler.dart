@@ -96,19 +96,58 @@ class UpDownMouseHandler implements TerminalMouseHandler {
       case MouseMode.clickOnly:
         return null;
       case MouseMode.upDownScroll:
-      case MouseMode.upDownScrollDrag:
-      case MouseMode.upDownScrollMove:
-        // Up events are never reported for mouse wheel buttons.
-        if (event.button.isWheel &&
-            event.buttonState == TerminalMouseButtonState.up) {
+        if (event.buttonState == TerminalMouseButtonState.moved) {
           return null;
         }
-        return MouseReporter.report(
-          event.button,
-          event.buttonState,
-          event.position,
-          event.state.mouseReportMode,
-        );
+        return _reportUpDown(event);
+      case MouseMode.upDownScrollDrag:
+        if (event.buttonState == TerminalMouseButtonState.moved) {
+          // Button-event tracking (DECSET 1002): motion is reported only
+          // while a real button is held.
+          if (event.button == TerminalMouseButton.none ||
+              event.button.isWheel) {
+            return null;
+          }
+          return _reportMoved(event);
+        }
+        return _reportUpDown(event);
+      case MouseMode.upDownScrollMove:
+        if (event.buttonState == TerminalMouseButtonState.moved) {
+          // Any-event tracking (DECSET 1003): all motion is reported;
+          // [TerminalMouseButton.none] encodes as button code 3 + 32.
+          if (event.button.isWheel) {
+            return null;
+          }
+          return _reportMoved(event);
+        }
+        return _reportUpDown(event);
     }
+  }
+
+  String? _reportUpDown(TerminalMouseEvent event) {
+    // The none pseudo-button only exists for motion reports.
+    if (event.button == TerminalMouseButton.none) {
+      return null;
+    }
+    // Up events are never reported for mouse wheel buttons.
+    if (event.button.isWheel &&
+        event.buttonState == TerminalMouseButtonState.up) {
+      return null;
+    }
+    return MouseReporter.report(
+      event.button,
+      event.buttonState,
+      event.position,
+      event.state.mouseReportMode,
+    );
+  }
+
+  String? _reportMoved(TerminalMouseEvent event) {
+    return MouseReporter.report(
+      event.button,
+      event.buttonState,
+      event.position,
+      event.state.mouseReportMode,
+    );
   }
 }
