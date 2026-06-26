@@ -160,8 +160,9 @@ class TerminalPainter {
     Canvas canvas,
     Offset offset,
     CellData cellData,
-    Color color,
-  ) {
+    Color color, {
+    bool emojiPresentation = false,
+  }) {
     final charCode = cellData.content & CellContent.codepointMask;
     if (charCode == 0) return;
 
@@ -173,6 +174,7 @@ class TerminalPainter {
       cellData.content,
       color.toARGB32(),
       _textScaler,
+      emojiPresentation,
     );
     var paragraph = _paragraphCache.getLayoutFromCache(cacheKey);
 
@@ -187,11 +189,14 @@ class TerminalPainter {
         bold: cellFlags & CellFlags.bold != 0,
         italic: cellFlags & CellFlags.italic != 0,
         underline: cellFlags & CellFlags.underline != 0,
+        emojiPresentation: emojiPresentation,
       );
 
       var char = String.fromCharCode(charCode);
       if (cellFlags & CellFlags.underline != 0 && charCode == 0x20) {
         char = String.fromCharCode(0xA0);
+      } else if (emojiPresentation) {
+        char += '\u{FE0F}';
       }
 
       paragraph = _paragraphCache.performAndCacheLayout(
@@ -234,7 +239,8 @@ class TerminalPainter {
       final charWidth = cellData.content >> CellContent.widthShift;
       final cellOffset = offset.translate(i * cellWidth, 0);
 
-      paintCell(canvas, cellOffset, cellData);
+      paintCell(canvas, cellOffset, cellData,
+          emojiPresentation: cellRequestsEmojiPresentation(line, i, charWidth));
 
       if (charWidth == 2) {
         i++;
@@ -242,20 +248,40 @@ class TerminalPainter {
     }
   }
 
+  /// Unicode variation selector-16: requests emoji (color) presentation.
+  static const _vs16 = 0xFE0F;
+
+  /// Whether the base character at [index] on [line] is immediately followed by
+  /// a U+FE0F (VS16) selector that requests emoji (color) presentation.
+  ///
+  /// The buffer stores one codepoint per cell, so the selector lands in its own
+  /// cell — directly after a narrow base char, or after the spacer cell when the
+  /// base char is wide ([charWidth] == 2). Folding it back lets glyphs like
+  /// ⚠️ / ✔️ render in color instead of monochrome text.
+  static bool cellRequestsEmojiPresentation(
+      BufferLine line, int index, int charWidth) {
+    final next = index + (charWidth == 2 ? 2 : 1);
+    return next < line.length && line.getCodePoint(next) == _vs16;
+  }
+
   @pragma('vm:prefer-inline')
-  void paintCell(Canvas canvas, Offset offset, CellData cellData) {
+  void paintCell(Canvas canvas, Offset offset, CellData cellData,
+      {bool emojiPresentation = false}) {
     paintCellBackground(canvas, offset, cellData);
-    paintCellForeground(canvas, offset, cellData);
+    paintCellForeground(canvas, offset, cellData,
+        emojiPresentation: emojiPresentation);
   }
 
   /// Paints the character in the cell represented by [cellData] to [canvas] at
   /// [offset].
   @pragma('vm:prefer-inline')
-  void paintCellForeground(Canvas canvas, Offset offset, CellData cellData) {
+  void paintCellForeground(Canvas canvas, Offset offset, CellData cellData,
+      {bool emojiPresentation = false}) {
     final charCode = cellData.content & CellContent.codepointMask;
     if (charCode == 0) return;
 
-    final cacheKey = cellData.getHash() ^ _textScaler.hashCode;
+    var cacheKey = cellData.getHash() ^ _textScaler.hashCode;
+    if (emojiPresentation) cacheKey ^= _vs16;
     var paragraph = _paragraphCache.getLayoutFromCache(cacheKey);
 
     if (paragraph == null) {
@@ -274,6 +300,7 @@ class TerminalPainter {
         bold: cellFlags & CellFlags.bold != 0,
         italic: cellFlags & CellFlags.italic != 0,
         underline: cellFlags & CellFlags.underline != 0,
+        emojiPresentation: emojiPresentation,
       );
 
       // Flutter does not draw an underline below a space which is not between
@@ -285,6 +312,8 @@ class TerminalPainter {
       var char = String.fromCharCode(charCode);
       if (cellFlags & CellFlags.underline != 0 && charCode == 0x20) {
         char = String.fromCharCode(0xA0);
+      } else if (emojiPresentation) {
+        char += '\u{FE0F}';
       }
 
       paragraph = _paragraphCache.performAndCacheLayout(

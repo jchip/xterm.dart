@@ -106,4 +106,54 @@ void main() {
       picture.dispose();
     });
   });
+
+  group('cellRequestsEmojiPresentation', () {
+    BufferLine lineOf(List<int> codepoints) {
+      final line = BufferLine(codepoints.length);
+      for (var i = 0; i < codepoints.length; i++) {
+        line.setCodePoint(i, codepoints[i]);
+      }
+      return line;
+    }
+
+    int widthOf(BufferLine line, int index) => line.getWidth(index);
+
+    test('detects a VS16 selector after a narrow base char (⚠️)', () {
+      // ⚠ U+26A0 (narrow) + U+FE0F lands in the very next cell.
+      final line = lineOf([0x26A0, 0xFE0F]);
+      expect(
+        TerminalPainter.cellRequestsEmojiPresentation(line, 0, widthOf(line, 0)),
+        isTrue,
+      );
+    });
+
+    test('detects a VS16 selector after a wide base char (past the spacer)', () {
+      // A width-2 base char occupies its cell plus a zero-codepoint spacer, so
+      // the selector sits two cells along, not one.
+      final line = BufferLine(3);
+      line.setCell(0, 0x1F525, 2, CursorStyle.empty); // 🔥 forced wide
+      line.setCodePoint(1, 0); // spacer cell
+      line.setCodePoint(2, 0xFE0F);
+      expect(
+        TerminalPainter.cellRequestsEmojiPresentation(line, 0, 2),
+        isTrue,
+      );
+    });
+
+    test('returns false for a bare base char with no selector', () {
+      final line = lineOf([0x26A0, 0x20]);
+      expect(
+        TerminalPainter.cellRequestsEmojiPresentation(line, 0, widthOf(line, 0)),
+        isFalse,
+      );
+    });
+
+    test('returns false at end of line', () {
+      final line = lineOf([0x26A0]);
+      expect(
+        TerminalPainter.cellRequestsEmojiPresentation(line, 0, widthOf(line, 0)),
+        isFalse,
+      );
+    });
+  });
 }

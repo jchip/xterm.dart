@@ -17,10 +17,25 @@ const _kDefaultFontFamilyFallback = [
   'Noto Sans Mono CJK KR',
   'Noto Sans Mono CJK JP',
   'Noto Sans Mono CJK HK',
+  'Apple Color Emoji',
+  'Apple Symbols',
   'Noto Color Emoji',
   'Noto Sans Symbols',
   'monospace',
   'sans-serif',
+];
+
+/// Color-emoji fonts, in platform-preference order. Used to render cells the
+/// program explicitly marked for emoji presentation (a trailing U+FE0F). These
+/// must take priority over the monospace fonts above, which ship monochrome
+/// glyphs for dual-presentation characters like ⚠ / ✔ / ▶ and would otherwise
+/// shadow the color glyph.
+const _kEmojiFontFamily = 'Apple Color Emoji';
+
+const _kEmojiFontFamilyFallback = [
+  'Apple Color Emoji',
+  'Segoe UI Emoji',
+  'Noto Color Emoji',
 ];
 
 class TerminalStyle {
@@ -57,12 +72,18 @@ class TerminalStyle {
     bool bold = false,
     bool italic = false,
     bool underline = false,
+    bool emojiPresentation = false,
   }) {
+    // When the program requests emoji presentation, resolve the glyph through a
+    // color-emoji font first so it wins over monospace fonts that carry a
+    // monochrome glyph for the same codepoint.
     return TextStyle(
       fontSize: fontSize,
       height: height,
-      fontFamily: fontFamily,
-      fontFamilyFallback: fontFamilyFallback,
+      fontFamily: emojiPresentation ? _kEmojiFontFamily : fontFamily,
+      fontFamilyFallback: emojiPresentation
+          ? [..._kEmojiFontFamilyFallback, fontFamily, ...fontFamilyFallback]
+          : fontFamilyFallback,
       color: color,
       backgroundColor: backgroundColor,
       fontWeight: bold ? FontWeight.bold : FontWeight.normal,

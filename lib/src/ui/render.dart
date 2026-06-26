@@ -845,11 +845,14 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
     final cellData = CellData.empty();
     line.getCellData(column, cellData);
+    final emojiPresentation =
+        column + 1 < line.length && line.getCodePoint(column + 1) == 0xFE0F;
     _painter.paintCellForegroundWithColor(
       canvas,
       offset,
       cellData,
       _painter.resolveCursorForegroundColor(),
+      emojiPresentation: emojiPresentation,
     );
   }
 
