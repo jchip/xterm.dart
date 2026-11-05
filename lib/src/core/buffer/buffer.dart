@@ -18,6 +18,10 @@ class Buffer {
 
   final bool isAltBuffer;
 
+  /// Optional callback invoked whenever a line scrolls off the top of the
+  /// scroll region during [scrollUp].
+  void Function(BufferLine line)? onLineEvicted;
+
   /// Characters that break selection when calling [getWordBoundary]. If null,
   /// defaults to [defaultWordSeparators].
   final Set<int>? wordSeparators;
@@ -234,6 +238,13 @@ class Buffer {
   }
 
   void scrollUp(int count) {
+    if (count > 0 && onLineEvicted != null) {
+      final end = min(absoluteMarginTop + count, absoluteMarginBottom + 1);
+      for (var i = absoluteMarginTop; i < end; i++) {
+        onLineEvicted!(lines[i]);
+      }
+    }
+
     for (var i = absoluteMarginTop; i <= absoluteMarginBottom; i++) {
       if (i <= absoluteMarginBottom - count) {
         lines[i] = lines.swap(i + count, _newEmptyLine());
@@ -270,6 +281,9 @@ class Buffer {
       if (isAltBuffer) {
         scrollUp(1);
       } else {
+        if (onLineEvicted != null && scrollBack < lines.length) {
+          onLineEvicted!(lines[scrollBack]);
+        }
         lines.push(_newEmptyLine());
       }
     } else {

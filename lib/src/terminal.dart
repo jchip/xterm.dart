@@ -71,6 +71,16 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
   /// escape sequence.
   void Function(String code, List<String> args)? onPrivateOSC;
 
+  /// Function that is called when raw data is written to the terminal via [write].
+  void Function(String data)? onWrite;
+
+  /// Function that is called when a line scrolls off the top of the scrolling
+  /// region during a scroll-up operation (e.g. in alt-buffer mode or scroll margins).
+  void Function(BufferLine line, {required bool isAltBuffer})? onLineScrolledOff;
+
+  /// Function that is called when the screen is cleared (e.g. [eraseDisplay] or [clearAltBuffer]).
+  void Function({required bool isAltBuffer})? onScreenCleared;
+
   /// Flag to toggle os specific behaviors.
   final TerminalTargetPlatform platform;
 
@@ -89,6 +99,9 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
     this.inputHandler = defaultInputHandler,
     this.mouseHandler = defaultMouseHandler,
     this.onPrivateOSC,
+    this.onWrite,
+    this.onLineScrolledOff,
+    this.onScreenCleared,
     this.reflowEnabled = true,
     this.wordSeparators,
     this.writeChunkSize,
@@ -132,14 +145,16 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
     maxLines: maxLines,
     isAltBuffer: false,
     wordSeparators: wordSeparators,
-  );
+  )..onLineEvicted =
+      ((line) => onLineScrolledOff?.call(line, isAltBuffer: false));
 
   late final _altBuffer = Buffer(
     this,
     maxLines: maxLines,
     isAltBuffer: true,
     wordSeparators: wordSeparators,
-  );
+  )..onLineEvicted =
+      ((line) => onLineScrolledOff?.call(line, isAltBuffer: true));
 
   final _tabStops = TabStops();
 
@@ -338,6 +353,7 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
     if (data.isEmpty) {
       return;
     }
+    onWrite?.call(data);
     _parseFlushTimer?.cancel();
     if (writeChunkSize == null) {
       _parser.write(data);
@@ -599,6 +615,10 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
     newWidth = max(newWidth, 1);
     newHeight = max(newHeight, 1);
 
+    if (_viewWidth == newWidth && _viewHeight == newHeight) {
+      return;
+    }
+
     onResize?.call(newWidth, newHeight, pixelWidth ?? 0, pixelHeight ?? 0);
 
     //we need to resize both buffers so that they are ready when we switch between them
@@ -823,6 +843,7 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
 
   @override
   void eraseDisplay() {
+    onScreenCleared?.call(isAltBuffer: isUsingAltBuffer);
     _buffer.eraseDisplay();
   }
 
@@ -965,6 +986,7 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
 
   @override
   void clearAltBuffer() {
+    onScreenCleared?.call(isAltBuffer: true);
     _altBuffer.clear();
   }
 

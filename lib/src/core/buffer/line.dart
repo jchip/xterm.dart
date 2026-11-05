@@ -378,6 +378,14 @@ class BufferLine with IndexedItem {
   String toString() {
     return getText();
   }
+
+  /// Creates an independent copy of this [BufferLine] with identical cells
+  /// and wrap state.
+  BufferLine copy() {
+    final result = BufferLine(_length, isWrapped: isWrapped);
+    result.copyFrom(this, 0, 0, _length);
+    return result;
+  }
 }
 
 /// A handle to a cell in a [BufferLine] that can be used to track the location

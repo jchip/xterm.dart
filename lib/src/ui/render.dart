@@ -574,23 +574,28 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   }
 
   void _notifyEditableRect() {
-    final cursorPos =
-        CellOffset(_terminal.buffer.cursorX, _terminal.buffer.absoluteCursorY);
-    if (cursorPos == _lastNotifiedCursorPos) return;
-    _lastNotifiedCursorPos = cursorPos;
+    if (!attached || !hasSize) return;
+    try {
+      final cursorPos =
+          CellOffset(_terminal.buffer.cursorX, _terminal.buffer.absoluteCursorY);
+      if (cursorPos == _lastNotifiedCursorPos) return;
 
-    final cursor = localToGlobal(cursorOffset);
+      final cursor = localToGlobal(cursorOffset);
+      _lastNotifiedCursorPos = cursorPos;
 
-    final rect = Rect.fromLTRB(
-      cursor.dx,
-      cursor.dy,
-      size.width,
-      cursor.dy + _painter.cellSize.height,
-    );
+      final rect = Rect.fromLTRB(
+        cursor.dx,
+        cursor.dy,
+        size.width,
+        cursor.dy + _painter.cellSize.height,
+      );
 
-    final caretRect = cursor & _painter.cellSize;
+      final caretRect = cursor & _painter.cellSize;
 
-    _onEditableRect?.call(rect, caretRect);
+      _onEditableRect?.call(rect, caretRect);
+    } catch (_) {
+      // Render tree ancestor may not be laid out yet.
+    }
   }
 
   /// Update the viewport size in cells based on the current widget size in
