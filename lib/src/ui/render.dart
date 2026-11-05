@@ -286,11 +286,18 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     final usableWidth = availableWidth - _padding.horizontal;
     final usableHeight = availableHeight - _padding.vertical;
 
-    // Snap to exact cell boundaries (ensure at least 1 row and 1 col)
+    // Snap the grid to whole cells (ensure at least 1 row and 1 col). The
+    // sub-cell remainder on each axis is letterboxed with the terminal
+    // background in [_paint], so the visible grid is always a whole number of
+    // lines x columns.
     final cols = max(1, (usableWidth / _painter.cellSize.width).floor());
     final rows = max(1, (usableHeight / _painter.cellSize.height).floor());
 
-    // Set size to exact multiple of cell size plus padding
+    // Prefer an exact whole-cell box. When the parent allows it (loose
+    // constraints) the box shrinks to the grid and the surrounding widget shows
+    // through. When the parent forces a fill (tight constraints — e.g. inside a
+    // `Scrollable`/`Expanded`/`Positioned.fill`, the common case), the box stays
+    // the full size and the <1-cell remainder is painted as background instead.
     size = constraints.constrain(
       Size(
         cols * _painter.cellSize.width + _padding.horizontal,
@@ -635,8 +642,20 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     return _terminal.cursorVisibleMode || _alwaysShowCursor || _isComposingText;
   }
 
+  /// Height of the visible terminal area, snapped DOWN to a whole number of
+  /// cells. The render box is sized by its parent (often a tight `Expanded` /
+  /// `Positioned.fill`), so `size.height` is rarely an exact multiple of the
+  /// cell height. Scroll math (`_maxScrollExtent`, stick-to-bottom) and line
+  /// painting all step in whole cells, while `_scrollOffset` is cell-floored —
+  /// so a fractional leftover here would leave the bottom row a sliver below
+  /// the painted region (the cursor "hiding beyond the bottom" on Enter) and
+  /// make stick-to-bottom flicker. Snapping keeps every term cell-aligned; the
+  /// leftover `< 1` line shows as background at the bottom edge.
   double get _viewportHeight {
-    return size.height - _padding.vertical;
+    final usable = size.height - _padding.vertical;
+    final cellHeight = _painter.cellSize.height;
+    if (cellHeight <= 0) return usable;
+    return (usable / cellHeight).floor() * cellHeight;
   }
 
   double get _maxScrollExtent {
@@ -670,6 +689,10 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   void _paint(PaintingContext context, Offset offset) {
     final canvas = context.canvas;
+    // Fill the whole box with the terminal background first. Lines paint on top
+    // within the whole-cell grid, so the sub-cell remainder on the right/bottom
+    // edges (when the box isn't an exact multiple of the cell size) stays
+    // background — the letterbox that lets the grid snap to whole cells.
     _viewportBackgroundPaint.color = _painter.theme.background;
     canvas.drawRect(offset & size, _viewportBackgroundPaint);
 
