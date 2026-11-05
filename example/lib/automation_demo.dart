@@ -463,6 +463,106 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
     }
   }
 
+  Future<void> _runScenario6GeminiTagTrigger() async {
+    if (isRunningScenario) return;
+    setState(() => isRunningScenario = true);
+    _addLog('Scenario 6 started: Gemini Tag-Triggered Automation');
+
+    StreamSubscription? ptySub;
+    try {
+      terminal.write(
+        '\r\n\x1b[1;35m=== Starting Gemini Tag-Triggered Automation ===\x1b[0m\r\n',
+      );
+
+      _activePty?.kill();
+      _activeProcess?.kill();
+
+      final agyPath = _findAgyPath();
+      final ptyBridgePath = _resolvePtyBridgePath();
+
+      final proc = await Process.start(
+        'python3',
+        [
+          ptyBridgePath,
+          '80',
+          '24',
+          agyPath,
+          '--model',
+          'gemini-3.8-flash-medium',
+        ],
+        environment: {
+          ...Platform.environment,
+          'TERM': 'xterm-256color',
+          'COLORTERM': 'truecolor',
+        },
+      );
+      _activeProcess = proc;
+
+      ptySub = proc.stdout
+          .transform(const Utf8Decoder(allowMalformed: true))
+          .listen(terminal.write);
+
+      proc.stderr
+          .transform(const Utf8Decoder(allowMalformed: true))
+          .listen(terminal.write);
+
+      _addLog('Waiting for agy startup & prompt...');
+      await driver.waitForPattern(
+        RegExp(r'\? for shortcuts|>'),
+        timeout: const Duration(seconds: 30),
+      );
+      await driver.waitForQuiet(silence: const Duration(milliseconds: 1500));
+      _addLog('agy ready! Prompt detected.');
+
+      const prompt1 =
+          'Explain how virtual memory works in 2 sentences. '
+          'Immediately after, output this exact tag on its own line: '
+          '[TAG:TRIGGER_ACTION:request_snapshot_and_ack]';
+
+      _addLog('Sending prompt 1 to Gemini...');
+      driver.sendLine(prompt1);
+
+      _addLog('Waiting for Gemini to emit special tag [TAG:TRIGGER_ACTION:request_snapshot_and_ack]...');
+      await driver.waitForPattern(
+        RegExp(r'\[TAG:TRIGGER_ACTION:request_snapshot_and_ack\]'),
+        timeout: const Duration(seconds: 60),
+      );
+
+      _addLog('>>> TAG DETECTED! Driver automatically executing triggered action:');
+      final snap = driver.captureSnapshot(label: 'gemini-tag-triggered');
+      _addLog('  - Screen snapshot captured: "${snap.label}"');
+      _addLog('  - Sending automated response to Gemini...');
+
+      const prompt2 =
+          'Driver detected your tag and captured a screen snapshot! '
+          'Now calculate 123 * 456, then output: '
+          '[TAG:TRIGGER_ACTION:all_steps_done]';
+      driver.sendLine(prompt2);
+
+      _addLog('Waiting for Gemini to emit [TAG:TRIGGER_ACTION:all_steps_done]...');
+      await driver.waitForPattern(
+        RegExp(r'\[TAG:TRIGGER_ACTION:all_steps_done\]'),
+        timeout: const Duration(seconds: 60),
+      );
+
+      _addLog('>>> SECOND TAG DETECTED! Gemini completed all steps.');
+      await driver.waitForQuiet(silence: const Duration(milliseconds: 1500));
+
+      _addLog('Sending "/exit" to agy...');
+      driver.sendLine('/exit');
+      await Future.delayed(const Duration(seconds: 2));
+
+      _addLog('Scenario 6 SUCCESS! Gemini tag-triggered workflow executed.');
+    } catch (e) {
+      _addLog('Scenario 6 failed: $e');
+    } finally {
+      await ptySub?.cancel();
+      _activeProcess?.kill();
+      _activeProcess = null;
+      setState(() => isRunningScenario = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isAlt = terminal.isUsingAltBuffer;
@@ -642,6 +742,15 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
                               label: const Text('5. Live agy (Gemini 3.8 Flash)'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF98C379),
+                                foregroundColor: Colors.black,
+                              ),
+                            ),
+                            ElevatedButton.icon(
+                              onPressed: isRunningScenario ? null : _runScenario6GeminiTagTrigger,
+                              icon: const Icon(Icons.bolt, size: 16),
+                              label: const Text('6. Gemini Tag Trigger'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFE5C07B),
                                 foregroundColor: Colors.black,
                               ),
                             ),

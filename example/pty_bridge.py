@@ -21,11 +21,18 @@ fcntl.ioctl(slave, termios.TIOCSWINSZ, winsize)
 pid = os.fork()
 if pid == 0:
     os.close(master)
-    os.setsid()
-    os.dup2(slave, 0)
-    os.dup2(slave, 1)
-    os.dup2(slave, 2)
-    os.close(slave)
+    if hasattr(os, 'login_tty'):
+        os.login_tty(slave)
+    else:
+        os.setsid()
+        try:
+            fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+        except Exception:
+            pass
+        os.dup2(slave, 0)
+        os.dup2(slave, 1)
+        os.dup2(slave, 2)
+        os.close(slave)
     os.execvp(cmd[0], cmd)
     os._exit(1)
 
