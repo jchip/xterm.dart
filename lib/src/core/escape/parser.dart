@@ -1056,8 +1056,8 @@ class EscapeParser {
         if (enabled) {
           handler.useAltBuffer();
         } else {
-          handler.clearAltBuffer();
           handler.useMainBuffer();
+          handler.clearAltBuffer();
         }
         return;
       case 1048:

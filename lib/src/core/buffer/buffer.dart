@@ -163,6 +163,9 @@ class Buffer {
       // Push viewHeight-1 lines, then clear the current line (line 0).
       // This preserves all content to scrollback without creating extra blank lines.
       for (var i = 0; i < viewHeight - 1; i++) {
+        if (onLineEvicted != null && scrollBack < lines.length) {
+          onLineEvicted!(lines[scrollBack].copy());
+        }
         lines.push(_newEmptyLine());
       }
       // Clear the current line (line 0 of the new viewport)
@@ -241,7 +244,7 @@ class Buffer {
     if (count > 0 && onLineEvicted != null) {
       final end = min(absoluteMarginTop + count, absoluteMarginBottom + 1);
       for (var i = absoluteMarginTop; i < end; i++) {
-        onLineEvicted!(lines[i]);
+        onLineEvicted!(lines[i].copy());
       }
     }
 
@@ -265,6 +268,9 @@ class Buffer {
     if (isInVerticalMargin) {
       if (_cursorY == _marginBottom) {
         if (marginTop == 0 && !isAltBuffer) {
+          if (onLineEvicted != null && scrollBack < lines.length) {
+            onLineEvicted!(lines[scrollBack].copy());
+          }
           lines.insert(absoluteMarginBottom + 1, _newEmptyLine());
         } else {
           scrollUp(1);
@@ -282,7 +288,7 @@ class Buffer {
         scrollUp(1);
       } else {
         if (onLineEvicted != null && scrollBack < lines.length) {
-          onLineEvicted!(lines[scrollBack]);
+          onLineEvicted!(lines[scrollBack].copy());
         }
         lines.push(_newEmptyLine());
       }
@@ -459,6 +465,12 @@ class Buffer {
     setCursorX(0);
 
     count = min(count, absoluteMarginBottom - absoluteCursorY + 1);
+
+    if (_cursorY == _marginTop && count > 0 && onLineEvicted != null) {
+      for (var i = 0; i < count; i++) {
+        onLineEvicted!(lines[absoluteCursorY + i].copy());
+      }
+    }
 
     final linesToMove = absoluteMarginBottom - absoluteCursorY + 1 - count;
 

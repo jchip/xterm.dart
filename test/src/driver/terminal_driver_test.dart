@@ -35,19 +35,24 @@ void main() {
       driver.sendLine('world');
       driver.sendKey(TerminalKey.enter);
 
-      expect(sent, contains('hello'));
-      expect(sent, contains('world\r'));
+      expect(sent, equals(['hello', 'world\r', '\r']));
       expect(driver.isQuiet, isFalse);
 
       driver.dispose();
     });
 
-    test('detects output quiet / settle periods', () async {
+    test('detects output quiet / settle periods and handles custom silence', () async {
       final terminal = Terminal();
       final driver = TerminalDriver(
         terminal,
-        quietPeriod: const Duration(milliseconds: 50),
+        quietPeriod: const Duration(milliseconds: 80),
       );
+
+      // Already quiet before any activity: custom silence returns immediately
+      final sw = Stopwatch()..start();
+      await driver.waitForQuiet(silence: const Duration(milliseconds: 500));
+      sw.stop();
+      expect(sw.elapsedMilliseconds, lessThan(100));
 
       var quietFired = false;
       driver.onQuiet.listen((_) => quietFired = true);
@@ -55,8 +60,13 @@ void main() {
       terminal.write('stream 1...');
       expect(driver.isQuiet, isFalse);
 
-      // Wait until quiet
-      await driver.waitForQuiet(silence: const Duration(milliseconds: 50));
+      // Shorter custom silence completes before default quietPeriod without
+      // prematurely marking driver.isQuiet as true
+      await driver.waitForQuiet(silence: const Duration(milliseconds: 20));
+      expect(driver.isQuiet, isFalse);
+
+      // Default quietPeriod then settles normally
+      await driver.waitForQuiet();
       expect(driver.isQuiet, isTrue);
       expect(quietFired, isTrue);
 
@@ -138,7 +148,32 @@ void main() {
       driver.dispose();
     });
 
-    test('captures screen snapshots before clear and on quiet', () async {
+    test('captures main buffer scroll-off and preserves unified history across alt buffer', () {
+      final terminal = Terminal();
+      terminal.resize(20, 3);
+
+      final driver = TerminalDriver(terminal);
+
+      // Write 5 lines in main buffer (3 visible, 2 scrolled off)
+      terminal.write('main-1\r\nmain-2\r\nmain-3\r\nmain-4\r\nmain-5');
+      expect(driver.capturedBackBuffer, equals(['main-1', 'main-2']));
+      expect(driver.altScrolledLines, isEmpty);
+
+      // Enter alt buffer, scroll 1 line off, and exit
+      terminal.write('\x1b[?1049h');
+      terminal.write('alt-1\r\nalt-2\r\nalt-3\r\nalt-4');
+      terminal.write('\x1b[?1049l');
+
+      expect(driver.altScrolledLines, equals(['alt-1']));
+      expect(
+        driver.allBackBufferLines,
+        equals(['main-1', 'main-2', 'alt-1']),
+      );
+
+      driver.dispose();
+    });
+
+    test('captures screen snapshots before clear, on CSI H CSI J, and on alt-buffer exit', () async {
       final terminal = Terminal();
       terminal.resize(20, 3);
 
@@ -153,13 +188,26 @@ void main() {
       expect(driver.snapshots.isNotEmpty, isTrue);
       expect(driver.snapshots.last.text, contains('screen frame 1'));
 
-      // Now clear the screen
+      // Now clear the screen with CSI 2 J
       terminal.write('\x1b[2J');
 
       // A snapshot was captured before the clear
       final clearSnapshots = driver.snapshots
           .where((s) => s.label?.contains('before-clear') ?? false);
       expect(clearSnapshots, isNotEmpty);
+
+      // Clear via CSI H CSI J (cursor at 0,0 + eraseDisplayBelow)
+      terminal.write('\x1b[Hframe before 0J');
+      final prevCount = driver.snapshots.length;
+      terminal.write('\x1b[H\x1b[J');
+      expect(driver.snapshots.length, greaterThan(prevCount));
+      expect(driver.snapshots.last.text, contains('frame before 0J'));
+
+      // Enter alt buffer, draw TUI frame, and immediately exit via CSI ? 1049 l
+      terminal.write('\x1b[?1049h\x1b[HTUI final frame\x1b[?1049l');
+      final altExitSnapshots = driver.snapshots
+          .where((s) => s.isAltBuffer && s.text.contains('TUI final frame'));
+      expect(altExitSnapshots, isNotEmpty);
 
       driver.dispose();
     });

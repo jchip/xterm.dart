@@ -88,7 +88,7 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
   }
 
   void _checkTriggers(Timer timer) {
-    final trigger = File('/Users/jc/dev/xterm.dart/.temp/run_agy.trigger');
+    final trigger = File('.temp/run_agy.trigger');
     if (trigger.existsSync()) {
       try {
         trigger.deleteSync();
@@ -417,7 +417,8 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
       final allScreenText = driver.getScreenText();
 
       // Write results to disk for automated inspection
-      final resultFile = File('/Users/jc/dev/xterm.dart/.temp/agy_automation_result.json');
+      final tempDir = Directory('.temp').existsSync() ? Directory('.temp') : Directory.systemTemp;
+      final resultFile = File('${tempDir.path}/agy_automation_result.json');
       resultFile.writeAsStringSync(jsonEncode({
         'status': 'SUCCESS',
         'task1_prompt': task1,
@@ -428,7 +429,6 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
         'screen_text_sample': allScreenText.substring(0, min(allScreenText.length, 500)),
       }));
 
-      final tempDir = Directory('.temp').existsSync() ? Directory('.temp') : Directory.systemTemp;
       final transcriptFile = File('${tempDir.path}/agy_captured_output.txt');
       transcriptFile.writeAsStringSync(
         '=== CAPTURED SCROLLED-OFF LINES (${driver.capturedBackBuffer.length} lines) ===\n'

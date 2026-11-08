@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:xterm/src/core/buffer/cell_offset.dart';
 import 'package:xterm/src/core/buffer/line.dart';
+import 'package:xterm/src/core/input/handler.dart';
 import 'package:xterm/src/core/input/keys.dart';
 import 'package:xterm/src/terminal.dart';
 
@@ -77,6 +79,8 @@ class TerminalDriver {
     this.onSend,
     this.quietPeriod = const Duration(milliseconds: 300),
     this.maxBackBufferLines = 5000,
+    this.maxSnapshots = 500,
+    this.maxTagEvents = 1000,
     bool autoCaptureSnapshots = true,
   }) : _autoCaptureSnapshots = autoCaptureSnapshots {
     _initHooks();
@@ -95,18 +99,26 @@ class TerminalDriver {
   /// Maximum number of lines to retain in the captured back-buffer.
   final int maxBackBufferLines;
 
+  /// Maximum number of screen snapshots to retain.
+  final int maxSnapshots;
+
+  /// Maximum number of OSC tag events to retain.
+  final int maxTagEvents;
+
   final bool _autoCaptureSnapshots;
 
   Timer? _quietTimer;
   bool _isQuiet = true;
+  DateTime? _lastActivityAt;
 
   int _bellCount = 0;
 
-  final _tagEvents = <TerminalTagEvent>[];
-  final _capturedBackBuffer = <String>[];
-  final _altScrolledLines = <String>[];
-  final _snapshots = <TerminalScreenSnapshot>[];
+  final _tagEvents = ListQueue<TerminalTagEvent>();
+  final _capturedBackBuffer = ListQueue<String>();
+  final _altScrolledLines = ListQueue<String>();
+  final _snapshots = ListQueue<TerminalScreenSnapshot>();
 
+  final _activityController = StreamController<void>.broadcast();
   final _quietController = StreamController<void>.broadcast();
   final _bellController = StreamController<int>.broadcast();
   final _tagController = StreamController<TerminalTagEvent>.broadcast();
@@ -120,6 +132,11 @@ class TerminalDriver {
   void Function({required bool isAltBuffer})? _prevOnScreenCleared;
 
   void _initHooks() {
+    final buf = terminal.buffer;
+    for (var i = 0; i < buf.scrollBack; i++) {
+      _appendBackBuffer(buf.lines[i].toString().trimRight());
+    }
+
     _prevOnBell = terminal.onBell;
     terminal.onBell = _handleBell;
 
@@ -151,7 +168,10 @@ class TerminalDriver {
 
   void _handlePrivateOsc(String code, List<String> args) {
     final event = TerminalTagEvent(code: code, args: List.unmodifiable(args));
-    _tagEvents.add(event);
+    _tagEvents.addLast(event);
+    while (_tagEvents.length > maxTagEvents) {
+      _tagEvents.removeFirst();
+    }
     _tagController.add(event);
     _prevOnPrivateOsc?.call(code, args);
     _bumpActivity();
@@ -161,7 +181,10 @@ class TerminalDriver {
     final lineText = line.toString();
     _appendBackBuffer(lineText);
     if (isAltBuffer) {
-      _altScrolledLines.add(lineText);
+      _altScrolledLines.addLast(lineText);
+      while (_altScrolledLines.length > maxBackBufferLines) {
+        _altScrolledLines.removeFirst();
+      }
     }
     _prevOnLineScrolledOff?.call(line, isAltBuffer: isAltBuffer);
     _bumpActivity();
@@ -176,7 +199,9 @@ class TerminalDriver {
   }
 
   void _bumpActivity() {
+    _lastActivityAt = DateTime.now();
     _isQuiet = false;
+    _activityController.add(null);
     _quietTimer?.cancel();
     _quietTimer = Timer(quietPeriod, _onSilenceSettled);
   }
@@ -190,9 +215,9 @@ class TerminalDriver {
   }
 
   void _appendBackBuffer(String line) {
-    _capturedBackBuffer.add(line);
-    if (_capturedBackBuffer.length > maxBackBufferLines) {
-      _capturedBackBuffer.removeAt(0);
+    _capturedBackBuffer.addLast(line);
+    while (_capturedBackBuffer.length > maxBackBufferLines) {
+      _capturedBackBuffer.removeFirst();
     }
   }
 
@@ -224,18 +249,7 @@ class TerminalDriver {
       List.unmodifiable(_capturedBackBuffer);
 
   /// All back-buffer lines across main buffer scrollback and alt-buffer scroll-off.
-  List<String> get allBackBufferLines {
-    if (_capturedBackBuffer.isNotEmpty) {
-      return List.unmodifiable(_capturedBackBuffer);
-    }
-    final result = <String>[];
-    final buf = terminal.buffer;
-    for (var i = 0; i < buf.scrollBack; i++) {
-      result.add(buf.lines[i].toString().trimRight());
-    }
-    result.addAll(_altScrolledLines);
-    return result;
-  }
+  List<String> get allBackBufferLines => List.unmodifiable(_capturedBackBuffer);
 
   /// Specifically captured lines that scrolled off during alternative buffer mode.
   List<String> get altScrolledLines => List.unmodifiable(_altScrolledLines);
@@ -267,6 +281,26 @@ class TerminalDriver {
     bool alt = false,
     bool ctrl = false,
   }) {
+    if (onSend != null) {
+      final output = terminal.inputHandler?.call(
+        TerminalKeyboardEvent(
+          key: key,
+          shift: shift,
+          alt: alt,
+          ctrl: ctrl,
+          state: terminal,
+          altBuffer: terminal.isUsingAltBuffer,
+          platform: terminal.platform,
+        ),
+      );
+      _bumpActivity();
+      if (output != null) {
+        onSend!(output);
+        return true;
+      }
+      return false;
+    }
+
     final handled = terminal.keyInput(
       key,
       shift: shift,
@@ -320,35 +354,45 @@ class TerminalDriver {
     Duration? silence,
     Duration timeout = const Duration(seconds: 10),
   }) {
-    if (_isQuiet && (silence == null || silence == quietPeriod)) {
-      return Future.value();
-    }
-
     if (silence == null || silence == quietPeriod) {
+      if (_isQuiet) {
+        return Future.value();
+      }
       return onQuiet.first.timeout(timeout, onTimeout: () {
         throw TimeoutException('Timed out waiting for terminal quiet', timeout);
       });
     }
 
     final effectiveSilence = silence;
+    final lastActivity = _lastActivityAt;
+    if (lastActivity == null) {
+      return Future.value();
+    }
+
+    final elapsed = DateTime.now().difference(lastActivity);
+    if (_isQuiet && elapsed >= effectiveSilence) {
+      return Future.value();
+    }
+
     final completer = Completer<void>();
 
     Timer? timer;
     Timer? timeoutTimer;
-    StreamSubscription<String>? sub;
+    StreamSubscription<void>? sub;
 
-    void resetTimer() {
+    void scheduleTimer(Duration delay) {
       timer?.cancel();
-      timer = Timer(effectiveSilence, () {
+      timer = Timer(delay, () {
         sub?.cancel();
         timeoutTimer?.cancel();
-        _isQuiet = true;
         if (!completer.isCompleted) completer.complete();
       });
     }
 
-    sub = onOutput.listen((_) => resetTimer());
-    resetTimer();
+    sub = _activityController.stream.listen((_) => scheduleTimer(effectiveSilence));
+    final initialDelay =
+        elapsed < effectiveSilence ? effectiveSilence - elapsed : effectiveSilence;
+    scheduleTimer(initialDelay);
 
     timeoutTimer = Timer(timeout, () {
       sub?.cancel();
@@ -404,8 +448,9 @@ class TerminalDriver {
       if (pattern.allMatches(screenText).isNotEmpty) return true;
 
       if (searchBackBuffer) {
-        for (var line in _capturedBackBuffer.reversed) {
-          if (pattern.allMatches(line).isNotEmpty) return true;
+        final backBuffer = _capturedBackBuffer.toList();
+        for (var i = backBuffer.length - 1; i >= 0; i--) {
+          if (pattern.allMatches(backBuffer[i]).isNotEmpty) return true;
         }
       }
       return false;
@@ -439,7 +484,10 @@ class TerminalDriver {
       isAltBuffer: terminal.isUsingAltBuffer,
       label: label,
     );
-    _snapshots.add(snapshot);
+    _snapshots.addLast(snapshot);
+    while (_snapshots.length > maxSnapshots) {
+      _snapshots.removeFirst();
+    }
     return snapshot;
   }
 
@@ -480,6 +528,7 @@ class TerminalDriver {
     terminal.onLineScrolledOff = _prevOnLineScrolledOff;
     terminal.onScreenCleared = _prevOnScreenCleared;
 
+    _activityController.close();
     _quietController.close();
     _bellController.close();
     _tagController.close();

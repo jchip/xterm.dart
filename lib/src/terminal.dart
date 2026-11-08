@@ -353,10 +353,10 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
     if (data.isEmpty) {
       return;
     }
-    onWrite?.call(data);
     _parseFlushTimer?.cancel();
     if (writeChunkSize == null) {
       _parser.write(data);
+      onWrite?.call(data);
       _schedulePendingParseFlushIfNeeded();
       _scheduleNotify();
       return;
@@ -407,6 +407,7 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
       drainedAny = true;
       remainingBatchLength -= chunk.length;
       _parser.write(chunk);
+      onWrite?.call(chunk);
     }
 
     if (!drainedAny) {
@@ -833,6 +834,9 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
 
   @override
   void eraseDisplayBelow() {
+    if (_buffer.cursorX == 0 && _buffer.cursorY == 0) {
+      onScreenCleared?.call(isAltBuffer: isUsingAltBuffer);
+    }
     _buffer.eraseDisplayFromCursor();
   }
 
@@ -981,12 +985,17 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
 
   @override
   void useMainBuffer() {
+    if (_buffer == _altBuffer) {
+      onScreenCleared?.call(isAltBuffer: true);
+    }
     _buffer = _mainBuffer;
   }
 
   @override
   void clearAltBuffer() {
-    onScreenCleared?.call(isAltBuffer: true);
+    if (_buffer == _altBuffer) {
+      onScreenCleared?.call(isAltBuffer: true);
+    }
     _altBuffer.clear();
   }
 
