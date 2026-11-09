@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xterm/xterm.dart';
 
@@ -235,6 +237,102 @@ void main() {
       await expectLater(
         driver.waitForPattern('item-delta'),
         completes,
+      );
+
+      driver.dispose();
+    });
+
+    test('waitForPattern ignores stale back-buffer lines from before last send', () async {
+      final terminal = Terminal();
+      terminal.resize(20, 2);
+
+      final driver = TerminalDriver(terminal);
+
+      // Initial prompt scrolls into back-buffer
+      terminal.write('PROMPT_READY\r\nline-1\r\nline-2');
+      expect(driver.capturedBackBuffer, contains('PROMPT_READY'));
+
+      // Sending new input advances the back-buffer search floor
+      driver.sendLine('next-cmd');
+
+      // Stale PROMPT_READY in back-buffer should not satisfy waitForPattern
+      await expectLater(
+        driver.waitForPattern(
+          'PROMPT_READY',
+          timeout: const Duration(milliseconds: 60),
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+
+      // If PROMPT_READY arrives in new output and scrolls off, it IS matched
+      terminal.write('\r\nPROMPT_READY\r\ntrailing-1\r\ntrailing-2');
+      await expectLater(
+        driver.waitForPattern('PROMPT_READY'),
+        completes,
+      );
+
+      driver.dispose();
+    });
+
+    test('waitForResponse handles synchronous output emitted during onSend', () async {
+      final terminal = Terminal();
+      late final TerminalDriver driver;
+      driver = TerminalDriver(
+        terminal,
+        quietPeriod: const Duration(milliseconds: 30),
+        onSend: (text) {
+          terminal.write('sync-reply: $text\r\n');
+        },
+      );
+
+      driver.sendLine('ping');
+      await expectLater(
+        driver.waitForResponse(
+          silence: const Duration(milliseconds: 30),
+          timeout: const Duration(milliseconds: 200),
+        ),
+        completes,
+      );
+      expect(driver.getScreenText(), contains('sync-reply: ping'));
+
+      driver.dispose();
+    });
+
+    test('waitForQuiet waits for chunked writes to drain', () async {
+      final terminal = Terminal(writeChunkSize: 4);
+      final driver = TerminalDriver(
+        terminal,
+        quietPeriod: const Duration(milliseconds: 30),
+      );
+
+      terminal.write('abcdefghijkl');
+      expect(terminal.pendingWriteLength, greaterThan(0));
+      expect(driver.isQuiet, isFalse);
+
+      await driver.waitForQuiet();
+      expect(terminal.pendingWriteLength, 0);
+      expect(driver.isQuiet, isTrue);
+      expect(driver.getScreenText(), contains('abcdefghijkl'));
+
+      driver.dispose();
+    });
+
+    test('CSI H CSI J evicts bottom viewport line and skips empty before-clear snapshots', () {
+      final terminal = Terminal();
+      terminal.resize(20, 3);
+      final driver = TerminalDriver(terminal);
+
+      // Entering alt screen and immediately clearing blank screen shouldn't add a snapshot
+      terminal.write('\x1b[?1049h\x1b[H\x1b[2J\x1b[?1049l');
+      expect(driver.snapshots, isEmpty);
+
+      // Fill all 3 rows of main buffer and clear via CSI H CSI J
+      terminal.write('row-top\r\nrow-mid\r\nrow-bot');
+      terminal.write('\x1b[H\x1b[J');
+
+      expect(
+        driver.capturedBackBuffer,
+        containsAllInOrder(['row-top', 'row-mid', 'row-bot']),
       );
 
       driver.dispose();

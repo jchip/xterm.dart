@@ -41,9 +41,11 @@ os.close(slave)
 fl = fcntl.fcntl(sys.stdin.fileno(), fcntl.F_GETFL)
 fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, fl | os.O_NONBLOCK)
 
+watch_fds = [master, sys.stdin.fileno()]
+
 try:
     while True:
-        r, _, _ = select.select([master, sys.stdin.fileno()], [], [], 0.05)
+        r, _, _ = select.select(watch_fds, [], [])
         if master in r:
             data = os.read(master, 4096)
             if not data:
@@ -55,6 +57,8 @@ try:
                 data = sys.stdin.buffer.read(4096)
                 if data:
                     os.write(master, data)
+                else:
+                    watch_fds.remove(sys.stdin.fileno())
             except (BlockingIOError, IOError):
                 pass
 except (OSError, KeyboardInterrupt):

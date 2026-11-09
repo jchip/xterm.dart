@@ -305,12 +305,24 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
     }
   }
 
+  void _restoreSimulatedDriver() {
+    driver.dispose();
+    terminal.onOutput = null;
+    driver = TerminalDriver(
+      terminal,
+      quietPeriod: const Duration(milliseconds: 300),
+      onSend: _handleDriverSend,
+    );
+    _hookDriverEvents();
+  }
+
   Future<void> _runScenario5LiveAgy() async {
     if (isRunningScenario) return;
     setState(() => isRunningScenario = true);
     _addLog('Scenario 5 started: Spawning agy with Gemini 3.8 Flash (Medium)...');
 
     StreamSubscription? ptySub;
+    StreamSubscription? stderrSub;
     try {
       terminal.write(
         '\r\n\x1b[1;34m=== Starting Live agy Session (Gemini 3.8 Flash Medium) ===\x1b[0m\r\n',
@@ -344,7 +356,7 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
           .transform(const Utf8Decoder(allowMalformed: true))
           .listen(terminal.write);
 
-      proc.stderr
+      stderrSub = proc.stderr
           .transform(const Utf8Decoder(allowMalformed: true))
           .listen(terminal.write);
 
@@ -455,10 +467,12 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
       }));
     } finally {
       await ptySub?.cancel();
+      await stderrSub?.cancel();
       _activePty?.kill();
       _activePty = null;
       _activeProcess?.kill();
       _activeProcess = null;
+      _restoreSimulatedDriver();
       setState(() => isRunningScenario = false);
     }
   }
@@ -469,6 +483,7 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
     _addLog('Scenario 6 started: Gemini Tag-Triggered Automation');
 
     StreamSubscription? ptySub;
+    StreamSubscription? stderrSub;
     try {
       terminal.write(
         '\r\n\x1b[1;35m=== Starting Gemini Tag-Triggered Automation ===\x1b[0m\r\n',
@@ -502,9 +517,25 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
           .transform(const Utf8Decoder(allowMalformed: true))
           .listen(terminal.write);
 
-      proc.stderr
+      stderrSub = proc.stderr
           .transform(const Utf8Decoder(allowMalformed: true))
           .listen(terminal.write);
+
+      driver.dispose();
+      driver = TerminalDriver(
+        terminal,
+        quietPeriod: const Duration(milliseconds: 1500),
+        onSend: (text) {
+          proc.stdin.write(text);
+          proc.stdin.flush();
+        },
+      );
+      _hookDriverEvents();
+
+      terminal.onOutput = (data) {
+        proc.stdin.write(data);
+        proc.stdin.flush();
+      };
 
       _addLog('Waiting for agy startup & prompt...');
       await driver.waitForPattern(
@@ -516,15 +547,18 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
 
       const prompt1 =
           'Explain how virtual memory works in 2 sentences. '
-          'Immediately after, output this exact tag on its own line: '
-          '[TAG:TRIGGER_ACTION:request_snapshot_and_ack]';
+          'Immediately after, on a new line starting with ">>", output: '
+          '>>[TAG:TRIGGER_ACTION:request_snapshot_and_ack]';
 
       _addLog('Sending prompt 1 to Gemini...');
       driver.sendLine(prompt1);
 
-      _addLog('Waiting for Gemini to emit special tag [TAG:TRIGGER_ACTION:request_snapshot_and_ack]...');
+      _addLog('Waiting for Gemini to emit special tag >>[TAG:TRIGGER_ACTION:request_snapshot_and_ack]...');
       await driver.waitForPattern(
-        RegExp(r'\[TAG:TRIGGER_ACTION:request_snapshot_and_ack\]'),
+        RegExp(
+          r'^\s*>>\[TAG:TRIGGER_ACTION:request_snapshot_and_ack\]',
+          multiLine: true,
+        ),
         timeout: const Duration(seconds: 60),
       );
 
@@ -535,13 +569,16 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
 
       const prompt2 =
           'Driver detected your tag and captured a screen snapshot! '
-          'Now calculate 123 * 456, then output: '
-          '[TAG:TRIGGER_ACTION:all_steps_done]';
+          'Now calculate 123 * 456, then on a new line starting with ">>", output: '
+          '>>[TAG:TRIGGER_ACTION:all_steps_done]';
       driver.sendLine(prompt2);
 
-      _addLog('Waiting for Gemini to emit [TAG:TRIGGER_ACTION:all_steps_done]...');
+      _addLog('Waiting for Gemini to emit >>[TAG:TRIGGER_ACTION:all_steps_done]...');
       await driver.waitForPattern(
-        RegExp(r'\[TAG:TRIGGER_ACTION:all_steps_done\]'),
+        RegExp(
+          r'^\s*>>\[TAG:TRIGGER_ACTION:all_steps_done\]',
+          multiLine: true,
+        ),
         timeout: const Duration(seconds: 60),
       );
 
@@ -557,8 +594,10 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
       _addLog('Scenario 6 failed: $e');
     } finally {
       await ptySub?.cancel();
+      await stderrSub?.cancel();
       _activeProcess?.kill();
       _activeProcess = null;
+      _restoreSimulatedDriver();
       setState(() => isRunningScenario = false);
     }
   }

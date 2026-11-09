@@ -72,41 +72,18 @@ void main() {
       },
     );
 
-    proc.stdout
+    final stdoutSub = proc.stdout
         .transform(const Utf8Decoder(allowMalformed: true))
         .listen(terminal.write);
 
-    proc.stderr
+    final stderrSub = proc.stderr
         .transform(const Utf8Decoder(allowMalformed: true))
         .listen(terminal.write);
 
     final triggeredActions = <String>[];
 
-    // Setup action listener on special tags:
     driver.onTag.listen((tag) {
       print('  -> [EVENT: TAG] code=${tag.code}, args=${tag.args}');
-
-      // Check for trigger_action tag: \e]777;tag;trigger_action;<action_name>\a
-      if (tag.code == '777' &&
-          tag.args.length >= 3 &&
-          tag.args[1] == 'trigger_action') {
-        final actionName = tag.args[2];
-        print('  *** [ACTION TRIGGERED BY GEMINI]: "$actionName" ***');
-        triggeredActions.add(actionName);
-
-        if (actionName == 'request_snapshot_and_ack') {
-          // Action 1: Driver takes snapshot and sends automated payload back
-          driver.captureSnapshot(label: 'gemini-trigger-$actionName');
-          print('  [ACTION EXECUTION] Captured snapshot on demand. Sending automated response back to Gemini...');
-          driver.sendLine(
-            'Action executed successfully by driver! Now run bash command: '
-            'python3 -c "open(\'/dev/tty\', \'wb\').write(b\'\\x1b]777;tag;trigger_action;all_steps_done\\x07\')" '
-            'and calculate 123 * 456.',
-          );
-        } else if (actionName == 'all_steps_done') {
-          print('  [ACTION EXECUTION] Gemini confirmed all steps complete!');
-        }
-      }
     });
 
     driver.onBell.listen((_) {
@@ -124,17 +101,20 @@ void main() {
     );
     print('[DRIVER] agy is ready.\n');
 
-    // Prompt Gemini to output the special tag in its response
+    // Prompt Gemini to output the special tag at the start of its own line
     const initialPrompt =
         'Explain what a page table is in 2 concise sentences. '
-        'Immediately after, output this exact tag on its own line: '
-        '[TAG:TRIGGER_ACTION:request_snapshot_and_ack]';
+        'Immediately after, on a new line starting with ">>", output: '
+        '>>[TAG:TRIGGER_ACTION:request_snapshot_and_ack]';
     print('[DRIVER] Prompting Gemini: "$initialPrompt"');
     driver.sendLine(initialPrompt);
 
-    print('[DRIVER] Waiting for Gemini to emit [TAG:TRIGGER_ACTION:request_snapshot_and_ack]...');
+    print('[DRIVER] Waiting for Gemini to emit >>[TAG:TRIGGER_ACTION:request_snapshot_and_ack]...');
     await driver.waitForPattern(
-      RegExp(r'\[TAG:TRIGGER_ACTION:request_snapshot_and_ack\]'),
+      RegExp(
+        r'^\s*>>\[TAG:TRIGGER_ACTION:request_snapshot_and_ack\]',
+        multiLine: true,
+      ),
       timeout: const Duration(seconds: 45),
     );
     print('[DRIVER] Special tag received from Gemini! Triggering automated action...\n');
@@ -145,15 +125,18 @@ void main() {
     print('  [ACTION EXECUTION] Captured snapshot on demand: "${driver.snapshots.last.label}"');
     print('  [ACTION EXECUTION] Sending follow-up instruction to Gemini...\n');
 
-    final followUpPrompt =
+    const followUpPrompt =
         'Driver received the tag and captured the snapshot! '
-        'Now compute 123 * 456, and then output: '
-        '[TAG:TRIGGER_ACTION:all_steps_done]';
+        'Now compute 123 * 456, and then on a new line starting with ">>", output: '
+        '>>[TAG:TRIGGER_ACTION:all_steps_done]';
     driver.sendLine(followUpPrompt);
 
-    print('[DRIVER] Waiting for Gemini to emit [TAG:TRIGGER_ACTION:all_steps_done]...');
+    print('[DRIVER] Waiting for Gemini to emit >>[TAG:TRIGGER_ACTION:all_steps_done]...');
     await driver.waitForPattern(
-      RegExp(r'\[TAG:TRIGGER_ACTION:all_steps_done\]'),
+      RegExp(
+        r'^\s*>>\[TAG:TRIGGER_ACTION:all_steps_done\]',
+        multiLine: true,
+      ),
       timeout: const Duration(seconds: 45),
     );
     print('[DRIVER] Second tag received! Triggering all_steps_done action...\n');
@@ -182,6 +165,8 @@ void main() {
     driver.sendLine('/exit');
     await Future.delayed(const Duration(seconds: 2));
 
+    await stdoutSub.cancel();
+    await stderrSub.cancel();
     driver.dispose();
     proc.kill();
     print('\n[DRIVER] Test completed successfully!');

@@ -109,9 +109,14 @@ class TerminalDriver {
 
   Timer? _quietTimer;
   bool _isQuiet = true;
+  bool _hasUnsettledOutput = false;
   DateTime? _lastActivityAt;
 
   int _bellCount = 0;
+  int _outputSeq = 0;
+  int _outputSeqAtLastSend = 0;
+  int _totalBackBufferAppended = 0;
+  int _backBufferFloor = 0;
 
   final _tagEvents = ListQueue<TerminalTagEvent>();
   final _capturedBackBuffer = ListQueue<String>();
@@ -132,7 +137,7 @@ class TerminalDriver {
   void Function({required bool isAltBuffer})? _prevOnScreenCleared;
 
   void _initHooks() {
-    final buf = terminal.buffer;
+    final buf = terminal.mainBuffer;
     for (var i = 0; i < buf.scrollBack; i++) {
       _appendBackBuffer(buf.lines[i].toString().trimRight());
     }
@@ -154,6 +159,8 @@ class TerminalDriver {
   }
 
   void _handleWrite(String data) {
+    _outputSeq++;
+    _hasUnsettledOutput = true;
     _prevOnWrite?.call(data);
     _outputController.add(data);
     _bumpActivity();
@@ -178,7 +185,8 @@ class TerminalDriver {
   }
 
   void _handleLineScrolledOff(BufferLine line, {required bool isAltBuffer}) {
-    final lineText = line.toString();
+    final lineText = line.toString().trimRight();
+    _hasUnsettledOutput = true;
     _appendBackBuffer(lineText);
     if (isAltBuffer) {
       _altScrolledLines.addLast(lineText);
@@ -191,8 +199,12 @@ class TerminalDriver {
   }
 
   void _handleScreenCleared({required bool isAltBuffer}) {
+    _hasUnsettledOutput = true;
     if (_autoCaptureSnapshots) {
-      captureSnapshot(label: 'before-clear (alt: $isAltBuffer)');
+      final lines = getScreenLines(trimTrailing: true);
+      if (lines.any((line) => line.isNotEmpty)) {
+        captureSnapshot(label: 'before-clear (alt: $isAltBuffer)');
+      }
     }
     _prevOnScreenCleared?.call(isAltBuffer: isAltBuffer);
     _bumpActivity();
@@ -208,13 +220,15 @@ class TerminalDriver {
 
   void _onSilenceSettled() {
     _isQuiet = true;
-    if (_autoCaptureSnapshots) {
+    if (_autoCaptureSnapshots && _hasUnsettledOutput) {
+      _hasUnsettledOutput = false;
       captureSnapshot(label: 'settled');
     }
     _quietController.add(null);
   }
 
   void _appendBackBuffer(String line) {
+    _totalBackBufferAppended++;
     _capturedBackBuffer.addLast(line);
     while (_capturedBackBuffer.length > maxBackBufferLines) {
       _capturedBackBuffer.removeFirst();
@@ -224,7 +238,7 @@ class TerminalDriver {
   // --- Public State and Streams ---
 
   /// Whether the terminal currently has no pending output activity.
-  bool get isQuiet => _isQuiet;
+  bool get isQuiet => _isQuiet && terminal.pendingWriteLength == 0;
 
   /// Stream that emits whenever the terminal settles into a quiet state.
   Stream<void> get onQuiet => _quietController.stream;
@@ -261,6 +275,8 @@ class TerminalDriver {
 
   /// Sends raw text input to the terminal or underlying process.
   void send(String text) {
+    _outputSeqAtLastSend = _outputSeq;
+    _backBufferFloor = _totalBackBufferAppended;
     if (onSend != null) {
       onSend!(text);
     } else {
@@ -281,6 +297,8 @@ class TerminalDriver {
     bool alt = false,
     bool ctrl = false,
   }) {
+    _outputSeqAtLastSend = _outputSeq;
+    _backBufferFloor = _totalBackBufferAppended;
     if (onSend != null) {
       final output = terminal.inputHandler?.call(
         TerminalKeyboardEvent(
@@ -332,14 +350,16 @@ class TerminalDriver {
     final effectiveSilence = silence ?? quietPeriod;
     final stopwatch = Stopwatch()..start();
 
-    // 1. Wait for activity to start
-    await onOutput.first.timeout(
-      timeout,
-      onTimeout: () => throw TimeoutException(
-        'Timed out waiting for response output to begin',
+    // 1. Wait for activity to start if none has arrived since the last send
+    if (_outputSeq <= _outputSeqAtLastSend) {
+      await onOutput.first.timeout(
         timeout,
-      ),
-    );
+        onTimeout: () => throw TimeoutException(
+          'Timed out waiting for response output to begin',
+          timeout,
+        ),
+      );
+    }
 
     // 2. Wait for quiet period after output begins
     final remainingTimeout = timeout - stopwatch.elapsed;
@@ -347,6 +367,7 @@ class TerminalDriver {
       throw TimeoutException('Timed out waiting for terminal quiet', timeout);
     }
     await waitForQuiet(silence: effectiveSilence, timeout: remainingTimeout);
+    _outputSeqAtLastSend = _outputSeq;
   }
 
   /// Waits until no new output arrives for the given [silence] interval.
@@ -355,22 +376,26 @@ class TerminalDriver {
     Duration timeout = const Duration(seconds: 10),
   }) {
     if (silence == null || silence == quietPeriod) {
-      if (_isQuiet) {
+      if (isQuiet) {
         return Future.value();
       }
-      return onQuiet.first.timeout(timeout, onTimeout: () {
+      return onQuiet
+          .firstWhere((_) => isQuiet)
+          .timeout(timeout, onTimeout: () {
         throw TimeoutException('Timed out waiting for terminal quiet', timeout);
       });
     }
 
     final effectiveSilence = silence;
     final lastActivity = _lastActivityAt;
-    if (lastActivity == null) {
+    if (lastActivity == null && terminal.pendingWriteLength == 0) {
       return Future.value();
     }
 
-    final elapsed = DateTime.now().difference(lastActivity);
-    if (_isQuiet && elapsed >= effectiveSilence) {
+    final elapsed = lastActivity != null
+        ? DateTime.now().difference(lastActivity)
+        : Duration.zero;
+    if (isQuiet && elapsed >= effectiveSilence) {
       return Future.value();
     }
 
@@ -383,6 +408,10 @@ class TerminalDriver {
     void scheduleTimer(Duration delay) {
       timer?.cancel();
       timer = Timer(delay, () {
+        if (terminal.pendingWriteLength > 0) {
+          scheduleTimer(effectiveSilence);
+          return;
+        }
         sub?.cancel();
         timeoutTimer?.cancel();
         if (!completer.isCompleted) completer.complete();
@@ -426,7 +455,8 @@ class TerminalDriver {
     return onTag.firstWhere((event) {
       if (event.code != code) return false;
       if (argPattern == null) return true;
-      return event.args.any((arg) => argPattern.allMatches(arg).isNotEmpty);
+      return event.args.any((arg) => argPattern.allMatches(arg).isNotEmpty) ||
+          argPattern.allMatches(event.args.join(';')).isNotEmpty;
     }).timeout(timeout, onTimeout: () {
       throw TimeoutException(
         'Timed out waiting for OSC tag $code ($argPattern)',
@@ -440,36 +470,61 @@ class TerminalDriver {
     Pattern pattern, {
     Duration timeout = const Duration(seconds: 10),
     bool searchBackBuffer = true,
-  }) async {
-    final stopwatch = Stopwatch()..start();
-
+  }) {
     bool checkMatch() {
       final screenText = getScreenText();
       if (pattern.allMatches(screenText).isNotEmpty) return true;
 
-      if (searchBackBuffer) {
-        final backBuffer = _capturedBackBuffer.toList();
-        for (var i = backBuffer.length - 1; i >= 0; i--) {
-          if (pattern.allMatches(backBuffer[i]).isNotEmpty) return true;
+      if (searchBackBuffer && _capturedBackBuffer.isNotEmpty) {
+        final searchableCount = _totalBackBufferAppended - _backBufferFloor;
+        if (searchableCount > 0) {
+          var remaining = searchableCount < _capturedBackBuffer.length
+              ? searchableCount
+              : _capturedBackBuffer.length;
+          for (final line in _capturedBackBuffer.toList().reversed) {
+            if (remaining-- <= 0) break;
+            if (pattern.allMatches(line).isNotEmpty) return true;
+          }
         }
       }
       return false;
     }
 
-    if (checkMatch()) return;
+    if (checkMatch()) return Future.value();
 
-    while (stopwatch.elapsed < timeout) {
-      await Future.any([
-        onOutput.first,
-        Future.delayed(const Duration(milliseconds: 50)),
-      ]);
-      if (checkMatch()) return;
+    final completer = Completer<void>();
+    StreamSubscription<void>? sub;
+    Timer? timeoutTimer;
+
+    void cleanup() {
+      sub?.cancel();
+      timeoutTimer?.cancel();
     }
 
-    throw TimeoutException(
-      'Timed out waiting for pattern "$pattern" in terminal',
-      timeout,
-    );
+    sub = _activityController.stream.listen((_) {
+      if (!completer.isCompleted && checkMatch()) {
+        cleanup();
+        completer.complete();
+      }
+    });
+
+    timeoutTimer = Timer(timeout, () {
+      if (!completer.isCompleted) {
+        cleanup();
+        if (checkMatch()) {
+          completer.complete();
+        } else {
+          completer.completeError(
+            TimeoutException(
+              'Timed out waiting for pattern "$pattern" in terminal',
+              timeout,
+            ),
+          );
+        }
+      }
+    });
+
+    return completer.future;
   }
 
   // --- Screen Capture and Inspection ---

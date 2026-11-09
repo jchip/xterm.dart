@@ -168,6 +168,11 @@ class Buffer {
         }
         lines.push(_newEmptyLine());
       }
+      if (onLineEvicted != null &&
+          scrollBack < lines.length &&
+          lines[scrollBack].getTrimmedLength() > 0) {
+        onLineEvicted!(lines[scrollBack].copy());
+      }
       // Clear the current line (line 0 of the new viewport)
       eraseLineFromCursor();
       return;
