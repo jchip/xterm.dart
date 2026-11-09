@@ -285,7 +285,8 @@ void main() {
       expect(terminal.buffer.scrollBack, 0);
       expect(terminal.buffer.height, 5);
 
-      // Clear the display
+      // Clear the display the way `clear` does: CUP home, then ED 2.
+      terminal.write('\x1b[H');
       terminal.buffer.eraseDisplay();
 
       // After clear, should have 5 lines in scrollback and 5 empty viewport lines
@@ -348,7 +349,8 @@ void main() {
       terminal.write('first2\r\n');
       terminal.write('first3');
 
-      // First clear
+      // First clear (CUP home, then ED 2, as `clear` sends)
+      terminal.write('\x1b[H');
       terminal.buffer.eraseDisplay();
       expect(terminal.buffer.scrollBack, 3);
 
@@ -358,6 +360,7 @@ void main() {
       terminal.write('second3');
 
       // Second clear
+      terminal.write('\x1b[H');
       terminal.buffer.eraseDisplay();
       expect(terminal.buffer.scrollBack, 6);
 

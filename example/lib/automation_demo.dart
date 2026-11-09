@@ -173,7 +173,8 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
       _addLog('Sending next command "git status"...');
       driver.sendLine('git status');
       await Future.delayed(const Duration(milliseconds: 100));
-      terminal.write('On branch master\r\nnothing to commit, working tree clean\r\n\$ ');
+      terminal.write(
+          'On branch master\r\nnothing to commit, working tree clean\r\n\$ ');
 
       await driver.waitForQuiet();
       _addLog('Scenario 1 completed successfully.');
@@ -257,7 +258,8 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
 
       // 4. Bell event to alert user
       terminal.write('\x07'); // BEL
-      terminal.write('\x1b[1;33m[ALERT] Critical step reached! Bell triggered.\x1b[0m\r\n');
+      terminal.write(
+          '\x1b[1;33m[ALERT] Critical step reached! Bell triggered.\x1b[0m\r\n');
       _addLog('Triggered terminal bell (\\a)');
 
       await Future.delayed(const Duration(milliseconds: 200));
@@ -288,7 +290,8 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
         final cpu = 25 + tick * 18;
         final mem = 40 + tick * 8;
         terminal.write('\x1b[H'); // Move to top-left
-        terminal.write('\x1b[1;35m--- TUI SYSTEM DASHBOARD (Frame $tick/3) ---\x1b[0m\r\n');
+        terminal.write(
+            '\x1b[1;35m--- TUI SYSTEM DASHBOARD (Frame $tick/3) ---\x1b[0m\r\n');
         terminal.write('CPU Usage : [$cpu%] ${'#' * (cpu ~/ 5)}\r\n');
         terminal.write('Memory    : [$mem%] ${'#' * (mem ~/ 5)}\r\n');
         terminal.write('Status    : Active telemetry stream\r\n');
@@ -318,7 +321,8 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
   Future<void> _runScenario5LiveAgy() async {
     if (isRunningScenario) return;
     setState(() => isRunningScenario = true);
-    _addLog('Scenario 5 started: Spawning agy with Gemini 3.8 Flash (Medium)...');
+    _addLog(
+        'Scenario 5 started: Spawning agy with Gemini 3.8 Flash (Medium)...');
 
     StreamSubscription? ptySub;
     StreamSubscription? stderrSub;
@@ -388,7 +392,8 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
       _addLog('Sending Task 1: "$task1"');
       driver.sendLine(task1);
 
-      _addLog('Monitoring agy generation stream. Waiting for response & quiet...');
+      _addLog(
+          'Monitoring agy generation stream. Waiting for response & quiet...');
       await driver.waitForResponse(
         silence: const Duration(milliseconds: 1500),
         timeout: const Duration(seconds: 120),
@@ -424,7 +429,9 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
       final allScreenText = driver.getScreenText();
 
       // Write results to disk for automated inspection
-      final tempDir = Directory('.temp').existsSync() ? Directory('.temp') : Directory.systemTemp;
+      final tempDir = Directory('.temp').existsSync()
+          ? Directory('.temp')
+          : Directory.systemTemp;
       final resultFile = File('${tempDir.path}/agy_automation_result.json');
       resultFile.writeAsStringSync(jsonEncode({
         'status': 'SUCCESS',
@@ -433,7 +440,8 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
         'task2_prompt': task2,
         'total_scrolled_lines': totalScrolled,
         'snapshots_count': driver.snapshots.length,
-        'screen_text_sample': allScreenText.substring(0, min(allScreenText.length, 500)),
+        'screen_text_sample':
+            allScreenText.substring(0, min(allScreenText.length, 500)),
       }));
 
       final transcriptFile = File('${tempDir.path}/agy_captured_output.txt');
@@ -448,10 +456,13 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
       driver.sendLine('/exit');
       await Future.delayed(const Duration(seconds: 2));
 
-      _addLog('Scenario 5 SUCCESS! Captured $totalScrolled scrolled-off lines in back-buffer.');
+      _addLog(
+          'Scenario 5 SUCCESS! Captured $totalScrolled scrolled-off lines in back-buffer.');
     } catch (e, st) {
       _addLog('Scenario 5 failed: $e');
-      final tempDir = Directory('.temp').existsSync() ? Directory('.temp') : Directory.systemTemp;
+      final tempDir = Directory('.temp').existsSync()
+          ? Directory('.temp')
+          : Directory.systemTemp;
       final errFile = File('${tempDir.path}/agy_automation_result.json');
       errFile.writeAsStringSync(jsonEncode({
         'status': 'ERROR',
@@ -536,15 +547,15 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
       await driver.waitForQuiet(silence: const Duration(milliseconds: 1500));
       _addLog('agy ready! Prompt detected.');
 
-      const prompt1 =
-          'Explain how virtual memory works in 2 sentences. '
+      const prompt1 = 'Explain how virtual memory works in 2 sentences. '
           'Immediately after, on a new line starting with ">>", output: '
           '>>[TAG:TRIGGER_ACTION:request_snapshot_and_ack]';
 
       _addLog('Sending prompt 1 to Gemini...');
       driver.sendLine(prompt1);
 
-      _addLog('Waiting for Gemini to emit special tag >>[TAG:TRIGGER_ACTION:request_snapshot_and_ack]...');
+      _addLog(
+          'Waiting for Gemini to emit special tag >>[TAG:TRIGGER_ACTION:request_snapshot_and_ack]...');
       await driver.waitForPattern(
         RegExp(
           r'^\s*>>\[TAG:TRIGGER_ACTION:request_snapshot_and_ack\]',
@@ -553,7 +564,8 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
         timeout: const Duration(seconds: 60),
       );
 
-      _addLog('>>> TAG DETECTED! Driver automatically executing triggered action:');
+      _addLog(
+          '>>> TAG DETECTED! Driver automatically executing triggered action:');
       final snap = driver.captureSnapshot(label: 'gemini-tag-triggered');
       _addLog('  - Screen snapshot captured: "${snap.label}"');
       _addLog('  - Sending automated response to Gemini...');
@@ -564,7 +576,8 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
           '>>[TAG:TRIGGER_ACTION:all_steps_done]';
       driver.sendLine(prompt2);
 
-      _addLog('Waiting for Gemini to emit >>[TAG:TRIGGER_ACTION:all_steps_done]...');
+      _addLog(
+          'Waiting for Gemini to emit >>[TAG:TRIGGER_ACTION:all_steps_done]...');
       await driver.waitForPattern(
         RegExp(
           r'^\s*>>\[TAG:TRIGGER_ACTION:all_steps_done\]',
@@ -612,7 +625,8 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
                   : const Color(0xFF61AFEF).withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                color: isAlt ? const Color(0xFFE5C07B) : const Color(0xFF61AFEF),
+                color:
+                    isAlt ? const Color(0xFFE5C07B) : const Color(0xFF61AFEF),
               ),
             ),
             child: Text(
@@ -620,7 +634,8 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
-                color: isAlt ? const Color(0xFFE5C07B) : const Color(0xFF61AFEF),
+                color:
+                    isAlt ? const Color(0xFFE5C07B) : const Color(0xFF61AFEF),
               ),
             ),
           ),
@@ -664,7 +679,8 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     color: const Color(0xFF282C34),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -680,7 +696,8 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
                         ),
                         Text(
                           'Size: ${terminal.viewWidth}x${terminal.viewHeight} | Status: $statusText',
-                          style: const TextStyle(fontSize: 11, color: Colors.white54),
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.white54),
                         ),
                       ],
                     ),
@@ -711,7 +728,8 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: const BoxDecoration(
-                      border: Border(bottom: BorderSide(color: Color(0xFF3E4451))),
+                      border:
+                          Border(bottom: BorderSide(color: Color(0xFF3E4451))),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -731,7 +749,9 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
                           runSpacing: 8,
                           children: [
                             ElevatedButton.icon(
-                              onPressed: isRunningScenario ? null : _runScenario1CliQuiet,
+                              onPressed: isRunningScenario
+                                  ? null
+                                  : _runScenario1CliQuiet,
                               icon: const Icon(Icons.timer_outlined, size: 16),
                               label: const Text('1. CLI & Quiet'),
                               style: ElevatedButton.styleFrom(
@@ -740,8 +760,11 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
                               ),
                             ),
                             ElevatedButton.icon(
-                              onPressed: isRunningScenario ? null : _runScenario2AltBufferCapture,
-                              icon: const Icon(Icons.history_outlined, size: 16),
+                              onPressed: isRunningScenario
+                                  ? null
+                                  : _runScenario2AltBufferCapture,
+                              icon:
+                                  const Icon(Icons.history_outlined, size: 16),
                               label: const Text('2. Alt-Buffer Capture'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF98C379),
@@ -749,8 +772,12 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
                               ),
                             ),
                             ElevatedButton.icon(
-                              onPressed: isRunningScenario ? null : _runScenario3TagsAndBells,
-                              icon: const Icon(Icons.notifications_active_outlined, size: 16),
+                              onPressed: isRunningScenario
+                                  ? null
+                                  : _runScenario3TagsAndBells,
+                              icon: const Icon(
+                                  Icons.notifications_active_outlined,
+                                  size: 16),
                               label: const Text('3. Tags & Bell'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFFE5C07B),
@@ -758,8 +785,11 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
                               ),
                             ),
                             ElevatedButton.icon(
-                              onPressed: isRunningScenario ? null : _runScenario4InPlaceTui,
-                              icon: const Icon(Icons.camera_alt_outlined, size: 16),
+                              onPressed: isRunningScenario
+                                  ? null
+                                  : _runScenario4InPlaceTui,
+                              icon: const Icon(Icons.camera_alt_outlined,
+                                  size: 16),
                               label: const Text('4. TUI Snapshots'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFFC678DD),
@@ -767,16 +797,22 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
                               ),
                             ),
                             ElevatedButton.icon(
-                              onPressed: isRunningScenario ? null : _runScenario5LiveAgy,
-                              icon: const Icon(Icons.smart_toy_outlined, size: 16),
-                              label: const Text('5. Live agy (Gemini 3.8 Flash)'),
+                              onPressed: isRunningScenario
+                                  ? null
+                                  : _runScenario5LiveAgy,
+                              icon: const Icon(Icons.smart_toy_outlined,
+                                  size: 16),
+                              label:
+                                  const Text('5. Live agy (Gemini 3.8 Flash)'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF98C379),
                                 foregroundColor: Colors.black,
                               ),
                             ),
                             ElevatedButton.icon(
-                              onPressed: isRunningScenario ? null : _runScenario6GeminiTagTrigger,
+                              onPressed: isRunningScenario
+                                  ? null
+                                  : _runScenario6GeminiTagTrigger,
                               icon: const Icon(Icons.bolt, size: 16),
                               label: const Text('6. Gemini Tag Trigger'),
                               style: ElevatedButton.styleFrom(
@@ -795,7 +831,9 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
                     controller: tabController,
                     indicatorColor: const Color(0xFF61AFEF),
                     tabs: [
-                      Tab(text: 'Back-Buffer (${driver.capturedBackBuffer.length})'),
+                      Tab(
+                          text:
+                              'Back-Buffer (${driver.capturedBackBuffer.length})'),
                       Tab(text: 'OSC Tags (${driver.tagEvents.length})'),
                       Tab(text: 'Snapshots (${driver.snapshots.length})'),
                       Tab(text: 'Logs (${executionLogs.length})'),
@@ -881,7 +919,8 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
     return ListView.separated(
       padding: const EdgeInsets.all(8),
       itemCount: tags.length,
-      separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFF3E4451)),
+      separatorBuilder: (_, __) =>
+          const Divider(height: 1, color: Color(0xFF3E4451)),
       itemBuilder: (context, index) {
         final tag = tags[index];
         final timeStr = tag.timestamp.toIso8601String().substring(11, 19);

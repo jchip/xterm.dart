@@ -156,36 +156,37 @@ class Buffer {
     }
   }
 
+  /// Scrolls the viewport into scrollback so a full-screen clear keeps the
+  /// previous screen in history, like Terminal.app and iTerm2 do.
+  ///
+  /// Rows from the top through the last row with content are pushed into
+  /// scrollback (and reported as evicted); trailing blank rows stay in the
+  /// viewport for the caller to erase, so a clear never adds blank lines to
+  /// history. The cursor keeps its viewport position.
+  void _pushViewportToScrollback() {
+    var rowsToPush = 0;
+    for (var i = viewHeight - 1; i >= 0; i--) {
+      if (lines[i + scrollBack].getTrimmedLength() > 0) {
+        rowsToPush = i + 1;
+        break;
+      }
+    }
+    for (var i = 0; i < rowsToPush; i++) {
+      // scrollBack tracks the top viewport row as lines are pushed.
+      onLineEvicted?.call(lines[scrollBack]);
+      lines.push(_newEmptyLine());
+    }
+  }
+
   /// Erases the viewport from the cursor position to the end of the buffer,
   /// including the cursor position.
   void eraseDisplayFromCursor() {
-    // Special case: if cursor is at top-left (0,0), this is equivalent to
-    // clearing the entire display (like the `clear` command does).
-    // For main buffer, push visible lines to scrollback before clearing.
+    // `CSI H CSI J` clears the whole screen; on the main buffer keep the old
+    // screen in scrollback instead of discarding it, then erase what is left.
     if (_cursorX == 0 && _cursorY == 0 && !isAltBuffer) {
-      // Push viewport lines into scrollback by inserting new empty lines.
-      // Push viewHeight-1 lines, then clear the current line (line 0).
-      // This preserves all content to scrollback without creating extra blank lines.
-      for (var i = 0; i < viewHeight - 1; i++) {
-        if (onLineEvicted != null &&
-            scrollBack >= 0 &&
-            scrollBack < lines.length) {
-          onLineEvicted!(lines[scrollBack]);
-        }
-        lines.push(_newEmptyLine());
-      }
-      if (onLineEvicted != null &&
-          scrollBack >= 0 &&
-          scrollBack < lines.length &&
-          lines[scrollBack].getTrimmedLength() > 0) {
-        onLineEvicted!(lines[scrollBack]);
-      }
-      // Clear the current line (line 0 of the new viewport)
-      eraseLineFromCursor();
-      return;
+      _pushViewportToScrollback();
     }
 
-    // Normal case: just erase from cursor position to end
     eraseLineFromCursor();
 
     for (var i = absoluteCursorY + 1; i < height; i++) {
@@ -207,8 +208,13 @@ class Buffer {
     }
   }
 
-  /// Erases the whole viewport.
+  /// Erases the whole viewport (`CSI 2 J`). On the main buffer the old screen
+  /// is kept in scrollback, which is what `clear` (`CSI H CSI 2 J`) relies on.
+  /// The cursor keeps its position, as ED does not move it.
   void eraseDisplay() {
+    if (!isAltBuffer) {
+      _pushViewportToScrollback();
+    }
     for (var i = 0; i < viewHeight; i++) {
       final line = lines[i + scrollBack];
       line.isWrapped = false;

@@ -271,8 +271,7 @@ class TerminalDriver {
 
   /// Unified back-buffer: main-buffer scrollback present at construction plus
   /// every line that has since left the viewport in either buffer.
-  List<String> get capturedBackBuffer =>
-      List.unmodifiable(_capturedBackBuffer);
+  List<String> get capturedBackBuffer => List.unmodifiable(_capturedBackBuffer);
 
   /// Specifically captured lines that scrolled off during alternative buffer mode.
   List<String> get altScrolledLines => List.unmodifiable(_altScrolledLines);
@@ -387,9 +386,7 @@ class TerminalDriver {
       if (isQuiet) {
         return Future.value();
       }
-      return onQuiet
-          .firstWhere((_) => isQuiet)
-          .timeout(timeout, onTimeout: () {
+      return onQuiet.firstWhere((_) => isQuiet).timeout(timeout, onTimeout: () {
         throw TimeoutException('Timed out waiting for terminal quiet', timeout);
       });
     }
@@ -428,7 +425,8 @@ class TerminalDriver {
       });
     }
 
-    sub = _activityController.stream.listen((_) => scheduleTimer(effectiveSilence));
+    sub = _activityController.stream
+        .listen((_) => scheduleTimer(effectiveSilence));
     final initialDelay = lastActivity != null && elapsed < effectiveSilence
         ? effectiveSilence - elapsed
         : effectiveSilence;
@@ -454,9 +452,7 @@ class TerminalDriver {
       return Future.value(_bellCount);
     }
     final initialCount = _bellFloor;
-    return onBell
-        .firstWhere((count) => count > initialCount)
-        .then((count) {
+    return onBell.firstWhere((count) => count > initialCount).then((count) {
       if (_bellFloor < count) _bellFloor = count;
       return count;
     }).timeout(timeout, onTimeout: () {
@@ -521,9 +517,8 @@ class TerminalDriver {
       if (sinceLastSend && checkedBackBufferSeq < _backBufferFloor) {
         checkedBackBufferSeq = _backBufferFloor;
       }
-      final screenText = sinceLastSend
-          ? _freshScreenLines().join('\n')
-          : getScreenText();
+      final screenText =
+          sinceLastSend ? _freshScreenLines().join('\n') : getScreenText();
       if (pattern.allMatches(screenText).isNotEmpty) return true;
 
       if (searchBackBuffer && _capturedBackBuffer.isNotEmpty) {
@@ -533,7 +528,9 @@ class TerminalDriver {
           final count = searchableCount < length ? searchableCount : length;
           // ListQueue.elementAt is O(1); walk newest-first without copying.
           for (var i = length - 1; i >= length - count; i--) {
-            if (pattern.allMatches(_capturedBackBuffer.elementAt(i)).isNotEmpty) {
+            if (pattern
+                .allMatches(_capturedBackBuffer.elementAt(i))
+                .isNotEmpty) {
               return true;
             }
           }

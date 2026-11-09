@@ -91,8 +91,7 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
       _mainBuffer.onLineEvicted = null;
       _altBuffer.onLineEvicted = null;
     } else {
-      _mainBuffer.onLineEvicted =
-          (line) => callback(line, isAltBuffer: false);
+      _mainBuffer.onLineEvicted = (line) => callback(line, isAltBuffer: false);
       _altBuffer.onLineEvicted = (line) => callback(line, isAltBuffer: true);
     }
   }
@@ -324,7 +323,8 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
       return Duration.zero;
     }
 
-    final effectiveInterval = _resolveAltBufferEffectiveNotifyInterval(interval);
+    final effectiveInterval =
+        _resolveAltBufferEffectiveNotifyInterval(interval);
 
     final lastNotifyAt = _lastNotifyAt;
     if (lastNotifyAt == null) {

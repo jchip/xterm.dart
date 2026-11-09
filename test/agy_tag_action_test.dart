@@ -43,7 +43,8 @@ void main() {
 
     final agyPath = _findAgy();
     final ptyBridgePath = _getPtyBridge();
-    print('[DRIVER] Spawning agy ($agyPath) via $ptyBridgePath in 80x24 PTY...');
+    print(
+        '[DRIVER] Spawning agy ($agyPath) via $ptyBridgePath in 80x24 PTY...');
 
     final proc = await Process.start(
       'python3',
@@ -109,7 +110,8 @@ void main() {
     print('[DRIVER] Prompting Gemini: "$initialPrompt"');
     driver.sendLine(initialPrompt);
 
-    print('[DRIVER] Waiting for Gemini to emit >>[TAG:TRIGGER_ACTION:request_snapshot_and_ack]...');
+    print(
+        '[DRIVER] Waiting for Gemini to emit >>[TAG:TRIGGER_ACTION:request_snapshot_and_ack]...');
     await driver.waitForPattern(
       RegExp(
         r'^\s*>>\[TAG:TRIGGER_ACTION:request_snapshot_and_ack\]',
@@ -117,21 +119,23 @@ void main() {
       ),
       timeout: const Duration(seconds: 45),
     );
-    print('[DRIVER] Special tag received from Gemini! Triggering automated action...\n');
+    print(
+        '[DRIVER] Special tag received from Gemini! Triggering automated action...\n');
     triggeredActions.add('request_snapshot_and_ack');
 
     // Trigger action: Capture snapshot and send follow-up task
     driver.captureSnapshot(label: 'gemini-trigger-request_snapshot_and_ack');
-    print('  [ACTION EXECUTION] Captured snapshot on demand: "${driver.snapshots.last.label}"');
+    print(
+        '  [ACTION EXECUTION] Captured snapshot on demand: "${driver.snapshots.last.label}"');
     print('  [ACTION EXECUTION] Sending follow-up instruction to Gemini...\n');
 
-    const followUpPrompt =
-        'Driver received the tag and captured the snapshot! '
+    const followUpPrompt = 'Driver received the tag and captured the snapshot! '
         'Now compute 123 * 456, and then on a new line starting with ">>", output: '
         '>>[TAG:TRIGGER_ACTION:all_steps_done]';
     driver.sendLine(followUpPrompt);
 
-    print('[DRIVER] Waiting for Gemini to emit >>[TAG:TRIGGER_ACTION:all_steps_done]...');
+    print(
+        '[DRIVER] Waiting for Gemini to emit >>[TAG:TRIGGER_ACTION:all_steps_done]...');
     await driver.waitForPattern(
       RegExp(
         r'^\s*>>\[TAG:TRIGGER_ACTION:all_steps_done\]',
@@ -139,7 +143,8 @@ void main() {
       ),
       timeout: const Duration(seconds: 45),
     );
-    print('[DRIVER] Second tag received! Triggering all_steps_done action...\n');
+    print(
+        '[DRIVER] Second tag received! Triggering all_steps_done action...\n');
     triggeredActions.add('all_steps_done');
 
     print('[DRIVER] Waiting for output stream to settle...');
@@ -153,13 +158,20 @@ void main() {
     print('Triggered actions: $triggeredActions');
     print('Snapshots captured: ${driver.snapshots.length}');
     print('Lines scrolled off screen: ${driver.capturedBackBuffer.length}');
-    print('Screen contains calculation result: ${driver.getScreenText().contains("56,088") || driver.getScreenText().contains("56088")}');
+    print(
+        'Screen contains calculation result: ${driver.getScreenText().contains("56,088") || driver.getScreenText().contains("56088")}');
     print('======================================================\n');
 
     expect(triggeredActions, contains('request_snapshot_and_ack'));
     expect(triggeredActions, contains('all_steps_done'));
-    expect(driver.snapshots.any((s) => s.label?.contains('request_snapshot_and_ack') == true), isTrue);
-    expect(driver.getScreenText().contains('56,088') || driver.getScreenText().contains('56088'), isTrue);
+    expect(
+        driver.snapshots
+            .any((s) => s.label?.contains('request_snapshot_and_ack') == true),
+        isTrue);
+    expect(
+        driver.getScreenText().contains('56,088') ||
+            driver.getScreenText().contains('56088'),
+        isTrue);
 
     print('[DRIVER] Sending "/exit" to agy...');
     driver.sendLine('/exit');

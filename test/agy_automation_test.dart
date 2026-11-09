@@ -43,7 +43,8 @@ void main() {
 
     final agyPath = _findAgy();
     final ptyBridgePath = _getPtyBridge();
-    print('[DRIVER] Spawning agy ($agyPath) with Gemini 3.8 Flash (Medium) in 80x24 PTY via $ptyBridgePath...');
+    print(
+        '[DRIVER] Spawning agy ($agyPath) with Gemini 3.8 Flash (Medium) in 80x24 PTY via $ptyBridgePath...');
 
     final proc = await Process.start(
       'python3',
@@ -102,7 +103,8 @@ void main() {
     print('         "$task1"\n');
     driver.sendLine(task1);
 
-    print('[DRIVER] Waiting for agy response generation to stream and settle...');
+    print(
+        '[DRIVER] Waiting for agy response generation to stream and settle...');
     final sw1 = Stopwatch()..start();
     await driver.waitForResponse(
       silence: const Duration(seconds: 4),
@@ -111,27 +113,36 @@ void main() {
     sw1.stop();
 
     print('[DRIVER] Task 1 completed in ${sw1.elapsed.inSeconds}s!');
-    print('=== CURRENT SCREEN ===\n${driver.getScreenText()}\n======================');
+    print(
+        '=== CURRENT SCREEN ===\n${driver.getScreenText()}\n======================');
     final backBuffer = driver.capturedBackBuffer;
     final task1Scrolled = backBuffer.length;
-    final task1Visible =
-        driver.getScreenLines(trimTrailing: true).where((l) => l.isNotEmpty).length;
-    print('         Lines scrolled off screen into back-buffer : $task1Scrolled');
-    print('         Lines currently visible on screen          : $task1Visible\n');
+    final task1Visible = driver
+        .getScreenLines(trimTrailing: true)
+        .where((l) => l.isNotEmpty)
+        .length;
+    print(
+        '         Lines scrolled off screen into back-buffer : $task1Scrolled');
+    print(
+        '         Lines currently visible on screen          : $task1Visible\n');
     driver.captureSnapshot(label: 'task1-done');
 
     expect(task1Scrolled, greaterThan(0),
-        reason: 'Long output should scroll off the screen into the captured back buffer');
+        reason:
+            'Long output should scroll off the screen into the captured back buffer');
 
     // Display preview of scrolled-off content
-    print('--- Preview of Content Scrolled Off Top of Screen (First 5 lines) ---');
+    print(
+        '--- Preview of Content Scrolled Off Top of Screen (First 5 lines) ---');
     for (var i = 0; i < task1Scrolled && i < 5; i++) {
       print('  [SCROLLBACK #$i] ${backBuffer[i]}');
     }
     print('  ...');
     print('--- Preview of Visible Screen Lines (Last 5 lines) ---');
-    final screenLines =
-        driver.getScreenLines(trimTrailing: true).where((l) => l.isNotEmpty).toList();
+    final screenLines = driver
+        .getScreenLines(trimTrailing: true)
+        .where((l) => l.isNotEmpty)
+        .toList();
     for (var i = screenLines.length > 5 ? screenLines.length - 5 : 0;
         i < screenLines.length;
         i++) {
@@ -159,10 +170,14 @@ void main() {
 
     final totalBackBuffer = driver.capturedBackBuffer;
     final totalScrolled = totalBackBuffer.length;
-    final finalScreenLines =
-        driver.getScreenLines(trimTrailing: true).where((l) => l.isNotEmpty).toList();
-    print('         Total lines scrolled off into back-buffer : $totalScrolled');
-    print('         Final visible lines on screen              : ${finalScreenLines.length}\n');
+    final finalScreenLines = driver
+        .getScreenLines(trimTrailing: true)
+        .where((l) => l.isNotEmpty)
+        .toList();
+    print(
+        '         Total lines scrolled off into back-buffer : $totalScrolled');
+    print(
+        '         Final visible lines on screen              : ${finalScreenLines.length}\n');
 
     print('--- Final Screen Content ---');
     for (var line in finalScreenLines) {

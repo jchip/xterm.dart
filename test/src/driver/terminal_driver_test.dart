@@ -63,7 +63,8 @@ void main() {
       driver.dispose();
     });
 
-    test('detects output quiet / settle periods and handles custom silence', () async {
+    test('detects output quiet / settle periods and handles custom silence',
+        () async {
       final terminal = Terminal();
       final driver = TerminalDriver(
         terminal,
@@ -170,7 +171,9 @@ void main() {
       driver.dispose();
     });
 
-    test('captures main buffer scroll-off and preserves unified history across alt buffer', () {
+    test(
+        'captures main buffer scroll-off and preserves unified history across alt buffer',
+        () {
       final terminal = Terminal();
       terminal.resize(20, 3);
 
@@ -195,7 +198,9 @@ void main() {
       driver.dispose();
     });
 
-    test('captures screen snapshots before clear, on CSI H CSI J, and on alt-buffer exit', () async {
+    test(
+        'captures screen snapshots before clear, on CSI H CSI J, and on alt-buffer exit',
+        () async {
       final terminal = Terminal();
       terminal.resize(20, 3);
 
@@ -262,7 +267,8 @@ void main() {
       driver.dispose();
     });
 
-    test('waitForPattern ignores stale back-buffer lines from before last send', () async {
+    test('waitForPattern ignores stale back-buffer lines from before last send',
+        () async {
       final terminal = Terminal();
       terminal.resize(20, 2);
 
@@ -294,7 +300,8 @@ void main() {
       driver.dispose();
     });
 
-    test('waitForPattern ignores stale screen rows from before last send', () async {
+    test('waitForPattern ignores stale screen rows from before last send',
+        () async {
       final terminal = Terminal();
       terminal.resize(20, 6);
       final driver = TerminalDriver(terminal);
@@ -337,7 +344,8 @@ void main() {
       driver.dispose();
     });
 
-    test('waitForPattern sees in-place TUI redraws and stale rows after scroll', () async {
+    test('waitForPattern sees in-place TUI redraws and stale rows after scroll',
+        () async {
       final terminal = Terminal();
       terminal.resize(20, 3);
       final driver = TerminalDriver(terminal);
@@ -347,7 +355,8 @@ void main() {
 
       // Unchanged alt-screen rows are stale
       await expectLater(
-        driver.waitForPattern('idle', timeout: const Duration(milliseconds: 60)),
+        driver.waitForPattern('idle',
+            timeout: const Duration(milliseconds: 60)),
         throwsA(isA<TimeoutException>()),
       );
 
@@ -360,7 +369,8 @@ void main() {
       terminal.write('\x1b[3;1H\r\nrow-4');
       expect(driver.getScreenLines(), equals(['row-2', 'row-3', 'row-4']));
       await expectLater(
-        driver.waitForPattern('row-2', timeout: const Duration(milliseconds: 60)),
+        driver.waitForPattern('row-2',
+            timeout: const Duration(milliseconds: 60)),
         throwsA(isA<TimeoutException>()),
       );
       await expectLater(driver.waitForPattern('row-4'), completes);
@@ -368,7 +378,8 @@ void main() {
       driver.dispose();
     });
 
-    test('custom waitForQuiet returns immediately once the silence has elapsed', () async {
+    test('custom waitForQuiet returns immediately once the silence has elapsed',
+        () async {
       final terminal = Terminal();
       final driver = TerminalDriver(
         terminal,
@@ -387,7 +398,8 @@ void main() {
       driver.dispose();
     });
 
-    test('waitForResponse handles synchronous output emitted during onOutput', () async {
+    test('waitForResponse handles synchronous output emitted during onOutput',
+        () async {
       final terminal = Terminal();
       terminal.onOutput = (text) {
         terminal.write('sync-reply: $text\r\n');
@@ -429,7 +441,9 @@ void main() {
       driver.dispose();
     });
 
-    test('CSI H CSI J evicts bottom viewport line and skips empty before-clear snapshots', () {
+    test(
+        'CSI H CSI J evicts bottom viewport line and skips empty before-clear snapshots',
+        () {
       final terminal = Terminal();
       terminal.resize(20, 3);
       final driver = TerminalDriver(terminal);
@@ -470,7 +484,9 @@ void main() {
       driver.dispose();
     });
 
-    test('pre-existing scrollback at driver creation does not satisfy waitForPattern by default', () async {
+    test(
+        'pre-existing scrollback at driver creation does not satisfy waitForPattern by default',
+        () async {
       final terminal = Terminal();
       terminal.resize(20, 2);
       terminal.write('OLD_PROMPT\r\nline-1\r\nline-2');
@@ -494,7 +510,8 @@ void main() {
       driver.dispose();
     });
 
-    test('waitForTag and waitForBell handle synchronous and coalesced events', () async {
+    test('waitForTag and waitForBell handle synchronous and coalesced events',
+        () async {
       final terminal = Terminal();
       terminal.onOutput = (text) {
         terminal.write('\x1b]133;C\x07output\x07\r\n\x1b]133;D;0\x07');
@@ -529,7 +546,9 @@ void main() {
       driver.dispose();
     });
 
-    test('unhandled sendKey does not mark driver non-quiet or advance watermarks', () async {
+    test(
+        'unhandled sendKey does not mark driver non-quiet or advance watermarks',
+        () async {
       final terminal = Terminal();
       final driver = TerminalDriver(terminal);
 
