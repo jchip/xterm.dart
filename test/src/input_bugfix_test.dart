@@ -5,7 +5,9 @@ import 'package:xterm/src/core/input/keys.dart';
 import 'package:xterm/src/core/cell.dart';
 
 void main() {
-  group('XTD-32: Ctrl and Alt input handlers accept multi-modifier combinations', () {
+  group(
+      'XTD-32: Ctrl and Alt input handlers accept multi-modifier combinations',
+      () {
     test('Ctrl+Shift+C produces Ctrl+C output (0x03)', () {
       final output = <String>[];
       final terminal = Terminal(onOutput: output.add);

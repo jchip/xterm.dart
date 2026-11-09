@@ -19,8 +19,9 @@ abstract class MouseReporter {
       case MouseReportMode.utf:
         // Button ID 3 is used to signal a button release. Motion reports add
         // 32 to the button code (xterm "button-motion" flag).
-        final buttonID = (state == TerminalMouseButtonState.up ? 3 : button.id) +
-            (state == TerminalMouseButtonState.moved ? 32 : 0);
+        final buttonID =
+            (state == TerminalMouseButtonState.up ? 3 : button.id) +
+                (state == TerminalMouseButtonState.moved ? 32 : 0);
         // The button ID is reported as shifted by 32 to produce a printable
         // character.
         final btn = String.fromCharCode(32 + buttonID);
@@ -39,8 +40,8 @@ abstract class MouseReporter {
       case MouseReportMode.sgr:
         // Motion reports add 32 to the button code and keep the trailing 'M'
         // (only releases use 'm' in SGR mode).
-        final buttonID = button.id +
-            (state == TerminalMouseButtonState.moved ? 32 : 0);
+        final buttonID =
+            button.id + (state == TerminalMouseButtonState.moved ? 32 : 0);
         final upDown = state == TerminalMouseButtonState.up ? 'm' : 'M';
         return "\x1b[<$buttonID;$x;$y$upDown";
       case MouseReportMode.urxvt:

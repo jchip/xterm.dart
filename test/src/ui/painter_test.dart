@@ -41,7 +41,8 @@ void main() {
         cellSizeOverride: const ui.Size(20, 20),
       );
 
-      expect(painter.resolveCursorForegroundColor(), const ui.Color(0xFF000000));
+      expect(
+          painter.resolveCursorForegroundColor(), const ui.Color(0xFF000000));
     });
 
     test('paints dark glyph pixels over a bright block cursor', () async {
@@ -76,7 +77,8 @@ void main() {
 
       final picture = recorder.endRecording();
       final image = await picture.toImage(20, 20);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      final byteData =
+          await image.toByteData(format: ui.ImageByteFormat.rawRgba);
 
       expect(byteData, isNotNull);
       final bytes = byteData!.buffer.asUint8List();
@@ -99,7 +101,8 @@ void main() {
       expect(
         darkPixels,
         greaterThan(0),
-        reason: 'block cursor should repaint the covered glyph, not only the block fill',
+        reason:
+            'block cursor should repaint the covered glyph, not only the block fill',
       );
 
       image.dispose();
@@ -122,12 +125,14 @@ void main() {
       // ⚠ U+26A0 (narrow) + U+FE0F lands in the very next cell.
       final line = lineOf([0x26A0, 0xFE0F]);
       expect(
-        TerminalPainter.cellRequestsEmojiPresentation(line, 0, widthOf(line, 0)),
+        TerminalPainter.cellRequestsEmojiPresentation(
+            line, 0, widthOf(line, 0)),
         isTrue,
       );
     });
 
-    test('detects a VS16 selector after a wide base char (past the spacer)', () {
+    test('detects a VS16 selector after a wide base char (past the spacer)',
+        () {
       // A width-2 base char occupies its cell plus a zero-codepoint spacer, so
       // the selector sits two cells along, not one.
       final line = BufferLine(3);
@@ -143,7 +148,8 @@ void main() {
     test('returns false for a bare base char with no selector', () {
       final line = lineOf([0x26A0, 0x20]);
       expect(
-        TerminalPainter.cellRequestsEmojiPresentation(line, 0, widthOf(line, 0)),
+        TerminalPainter.cellRequestsEmojiPresentation(
+            line, 0, widthOf(line, 0)),
         isFalse,
       );
     });
@@ -151,7 +157,8 @@ void main() {
     test('returns false at end of line', () {
       final line = lineOf([0x26A0]);
       expect(
-        TerminalPainter.cellRequestsEmojiPresentation(line, 0, widthOf(line, 0)),
+        TerminalPainter.cellRequestsEmojiPresentation(
+            line, 0, widthOf(line, 0)),
         isFalse,
       );
     });

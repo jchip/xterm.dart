@@ -12,7 +12,8 @@ void main() {
     test('TerminalMouseButton.middle has id 1, distinct from right (id 2)', () {
       expect(TerminalMouseButton.middle.id, 1);
       expect(TerminalMouseButton.right.id, 2);
-      expect(TerminalMouseButton.middle.id, isNot(TerminalMouseButton.right.id));
+      expect(
+          TerminalMouseButton.middle.id, isNot(TerminalMouseButton.right.id));
     });
 
     test('mouse report for middle button uses button id 1', () {
@@ -54,7 +55,8 @@ void main() {
       expect(middleReport, isNot(rightReport));
     });
 
-    test('terminal mouseInput with middle button reports middle, not right', () {
+    test('terminal mouseInput with middle button reports middle, not right',
+        () {
       final output = <String>[];
       final terminal = Terminal(onOutput: output.add);
       terminal.resize(80, 24);
@@ -190,7 +192,9 @@ void main() {
       expect(maxRow, 23);
     });
 
-    test('after 100 lines of scrollback, mouseInput at (0,0) still reports (1,1)', () {
+    test(
+        'after 100 lines of scrollback, mouseInput at (0,0) still reports (1,1)',
+        () {
       final output = <String>[];
       final terminal = Terminal(onOutput: output.add);
       terminal.resize(80, 24);
@@ -318,7 +322,9 @@ void main() {
       }
     });
 
-    test('multiple sequential mouse events at different positions report correct coords', () {
+    test(
+        'multiple sequential mouse events at different positions report correct coords',
+        () {
       final output = <String>[];
       final terminal = Terminal(onOutput: output.add);
       terminal.resize(80, 24);
@@ -346,7 +352,8 @@ void main() {
           positions[i],
         );
         expect(output.last, expectedReports[i],
-            reason: 'Click at ${positions[i]} should report ${expectedReports[i]}');
+            reason:
+                'Click at ${positions[i]} should report ${expectedReports[i]}');
       }
     });
   });

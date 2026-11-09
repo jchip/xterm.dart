@@ -64,7 +64,8 @@ void main() {
         () {
       expect(TerminalKey.returnKey, isNot(equals(TerminalKey.enter)),
           reason: 'returnKey and enter must be distinct enum values');
-      expect(TerminalKey.returnKey.index, isNot(equals(TerminalKey.enter.index)),
+      expect(
+          TerminalKey.returnKey.index, isNot(equals(TerminalKey.enter.index)),
           reason: 'returnKey and enter must have different enum indices');
     });
 

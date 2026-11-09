@@ -112,7 +112,8 @@ void main() {
       expect(terminal.cursor.foreground, equals(expected));
     });
 
-    test('Multiple SGR params with malformed 256-color sets bold, no crash', () {
+    test('Multiple SGR params with malformed 256-color sets bold, no crash',
+        () {
       final terminal = Terminal();
       terminal.resize(80, 24);
 
@@ -235,7 +236,8 @@ void main() {
       // Scroll region is 11 rows (5..15), so max relative row is 11
       // Should clamp to marginBottom = row 14 (0-based)
       terminal.write('\x1b[20d');
-      expect(terminal.buffer.cursorY, 14); // marginBottom (row 15, 0-based = 14)
+      expect(
+          terminal.buffer.cursorY, 14); // marginBottom (row 15, 0-based = 14)
 
       // Disable origin mode
       terminal.write('\x1b[?6l');

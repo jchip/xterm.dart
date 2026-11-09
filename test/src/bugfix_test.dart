@@ -112,7 +112,8 @@ void main() {
       terminal.write('\x1b[3g');
 
       // Move to column 5 and set a tab stop
-      terminal.write('\x1b[6G'); // CHA to column 6 (1-based) = column 5 (0-based)
+      terminal
+          .write('\x1b[6G'); // CHA to column 6 (1-based) = column 5 (0-based)
       terminal.write('\x1bH'); // HTS - set tab stop here
 
       // Move to column 0
@@ -248,12 +249,10 @@ void main() {
     // would require a full widget test.
     test('TerminalCursorType enum has all types', () {
       expect(TerminalCursorType.values.length, 3);
-      expect(TerminalCursorType.values,
-          contains(TerminalCursorType.underline));
-      expect(TerminalCursorType.values,
-          contains(TerminalCursorType.verticalBar));
+      expect(TerminalCursorType.values, contains(TerminalCursorType.underline));
       expect(
-          TerminalCursorType.values, contains(TerminalCursorType.block));
+          TerminalCursorType.values, contains(TerminalCursorType.verticalBar));
+      expect(TerminalCursorType.values, contains(TerminalCursorType.block));
     });
   });
 
@@ -272,8 +271,7 @@ void main() {
       final line = terminal.buffer.lines[terminal.buffer.absoluteCursorY];
       // Columns 0-5 should be erased (codepoint 0)
       for (var i = 0; i <= 5; i++) {
-        expect(line.getCodePoint(i), 0,
-            reason: 'Column $i should be erased');
+        expect(line.getCodePoint(i), 0, reason: 'Column $i should be erased');
       }
       // Columns 6-9 should still have content
       expect(line.getCodePoint(6), 'G'.codeUnitAt(0));

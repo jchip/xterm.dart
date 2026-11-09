@@ -398,7 +398,6 @@ void main() {
         );
       },
     );
-
   });
 
   group('TerminalController.pointerInputs', () {
