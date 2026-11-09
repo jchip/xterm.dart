@@ -76,7 +76,29 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
 
   /// Function that is called when a line scrolls off the top of the scrolling
   /// region during a scroll-up operation (e.g. in alt-buffer mode or scroll margins).
-  void Function(BufferLine line, {required bool isAltBuffer})? onLineScrolledOff;
+  ///
+  /// The [BufferLine] passed to the callback is only guaranteed to be valid for
+  /// the duration of the call; use [BufferLine.copy] to retain it. When no
+  /// callback is set the buffers skip the eviction bookkeeping entirely.
+  void Function(BufferLine line, {required bool isAltBuffer})?
+      get onLineScrolledOff => _onLineScrolledOff;
+
+  set onLineScrolledOff(
+    void Function(BufferLine line, {required bool isAltBuffer})? callback,
+  ) {
+    _onLineScrolledOff = callback;
+    if (callback == null) {
+      _mainBuffer.onLineEvicted = null;
+      _altBuffer.onLineEvicted = null;
+    } else {
+      _mainBuffer.onLineEvicted =
+          (line) => callback(line, isAltBuffer: false);
+      _altBuffer.onLineEvicted = (line) => callback(line, isAltBuffer: true);
+    }
+  }
+
+  void Function(BufferLine line, {required bool isAltBuffer})?
+      _onLineScrolledOff;
 
   /// Function that is called when the screen is cleared (e.g. [eraseDisplay] or [clearAltBuffer]).
   void Function({required bool isAltBuffer})? onScreenCleared;
@@ -100,13 +122,18 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
     this.mouseHandler = defaultMouseHandler,
     this.onPrivateOSC,
     this.onWrite,
-    this.onLineScrolledOff,
+    void Function(BufferLine line, {required bool isAltBuffer})?
+        onLineScrolledOff,
     this.onScreenCleared,
     this.reflowEnabled = true,
     this.wordSeparators,
     this.writeChunkSize,
     this.altBufferNotifyInterval,
-  });
+  }) {
+    if (onLineScrolledOff != null) {
+      this.onLineScrolledOff = onLineScrolledOff;
+    }
+  }
 
   /// Optional maximum number of UTF-16 code units to parse from inbound
   /// [write] data in a single event-loop turn.
@@ -145,16 +172,14 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
     maxLines: maxLines,
     isAltBuffer: false,
     wordSeparators: wordSeparators,
-  )..onLineEvicted =
-      ((line) => onLineScrolledOff?.call(line, isAltBuffer: false));
+  );
 
   late final _altBuffer = Buffer(
     this,
     maxLines: maxLines,
     isAltBuffer: true,
     wordSeparators: wordSeparators,
-  )..onLineEvicted =
-      ((line) => onLineScrolledOff?.call(line, isAltBuffer: true));
+  );
 
   final _tabStops = TabStops();
 

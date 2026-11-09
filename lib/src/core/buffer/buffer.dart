@@ -18,8 +18,12 @@ class Buffer {
 
   final bool isAltBuffer;
 
-  /// Optional callback invoked whenever a line scrolls off the top of the
-  /// scroll region during [scrollUp].
+  /// Optional callback invoked whenever a line leaves the viewport: scrolled
+  /// off the top of the scroll region, pushed into scrollback, deleted at the
+  /// top margin, or pushed out by a clear-to-scrollback.
+  ///
+  /// The line is only valid for the duration of the call; the buffer may
+  /// reuse or erase it afterwards. Callers that retain it must [BufferLine.copy].
   void Function(BufferLine line)? onLineEvicted;
 
   /// Characters that break selection when calling [getWordBoundary]. If null,
@@ -158,20 +162,23 @@ class Buffer {
     // Special case: if cursor is at top-left (0,0), this is equivalent to
     // clearing the entire display (like the `clear` command does).
     // For main buffer, push visible lines to scrollback before clearing.
-    if (_cursorX == 0 && _cursorY == 0 && !isAltBuffer && !lines.isFull) {
+    if (_cursorX == 0 && _cursorY == 0 && !isAltBuffer) {
       // Push viewport lines into scrollback by inserting new empty lines.
       // Push viewHeight-1 lines, then clear the current line (line 0).
       // This preserves all content to scrollback without creating extra blank lines.
       for (var i = 0; i < viewHeight - 1; i++) {
-        if (onLineEvicted != null && scrollBack < lines.length) {
-          onLineEvicted!(lines[scrollBack].copy());
+        if (onLineEvicted != null &&
+            scrollBack >= 0 &&
+            scrollBack < lines.length) {
+          onLineEvicted!(lines[scrollBack]);
         }
         lines.push(_newEmptyLine());
       }
       if (onLineEvicted != null &&
+          scrollBack >= 0 &&
           scrollBack < lines.length &&
           lines[scrollBack].getTrimmedLength() > 0) {
-        onLineEvicted!(lines[scrollBack].copy());
+        onLineEvicted!(lines[scrollBack]);
       }
       // Clear the current line (line 0 of the new viewport)
       eraseLineFromCursor();
@@ -249,7 +256,7 @@ class Buffer {
     if (count > 0 && onLineEvicted != null) {
       final end = min(absoluteMarginTop + count, absoluteMarginBottom + 1);
       for (var i = absoluteMarginTop; i < end; i++) {
-        onLineEvicted!(lines[i].copy());
+        onLineEvicted!(lines[i]);
       }
     }
 
@@ -274,7 +281,7 @@ class Buffer {
       if (_cursorY == _marginBottom) {
         if (marginTop == 0 && !isAltBuffer) {
           if (onLineEvicted != null && scrollBack < lines.length) {
-            onLineEvicted!(lines[scrollBack].copy());
+            onLineEvicted!(lines[scrollBack]);
           }
           lines.insert(absoluteMarginBottom + 1, _newEmptyLine());
         } else {
@@ -293,7 +300,7 @@ class Buffer {
         scrollUp(1);
       } else {
         if (onLineEvicted != null && scrollBack < lines.length) {
-          onLineEvicted!(lines[scrollBack].copy());
+          onLineEvicted!(lines[scrollBack]);
         }
         lines.push(_newEmptyLine());
       }
@@ -473,7 +480,7 @@ class Buffer {
 
     if (_cursorY == _marginTop && count > 0 && onLineEvicted != null) {
       for (var i = 0; i < count; i++) {
-        onLineEvicted!(lines[absoluteCursorY + i].copy());
+        onLineEvicted!(lines[absoluteCursorY + i]);
       }
     }
 

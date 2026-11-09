@@ -113,10 +113,14 @@ class TerminalDriver {
   DateTime? _lastActivityAt;
 
   int _bellCount = 0;
+  int _bellFloor = 0;
   int _outputSeq = 0;
   int _outputSeqAtLastSend = 0;
   int _totalBackBufferAppended = 0;
   int _backBufferFloor = 0;
+  int _totalTagsAppended = 0;
+  int _tagFloor = 0;
+  List<String>? _screenAtLastSend;
 
   final _tagEvents = ListQueue<TerminalTagEvent>();
   final _capturedBackBuffer = ListQueue<String>();
@@ -141,6 +145,7 @@ class TerminalDriver {
     for (var i = 0; i < buf.scrollBack; i++) {
       _appendBackBuffer(buf.lines[i].toString().trimRight());
     }
+    _backBufferFloor = _totalBackBufferAppended;
 
     _prevOnBell = terminal.onBell;
     terminal.onBell = _handleBell;
@@ -175,6 +180,7 @@ class TerminalDriver {
 
   void _handlePrivateOsc(String code, List<String> args) {
     final event = TerminalTagEvent(code: code, args: List.unmodifiable(args));
+    _totalTagsAppended++;
     _tagEvents.addLast(event);
     while (_tagEvents.length > maxTagEvents) {
       _tagEvents.removeFirst();
@@ -219,6 +225,10 @@ class TerminalDriver {
   }
 
   void _onSilenceSettled() {
+    if (terminal.pendingWriteLength > 0) {
+      _quietTimer = Timer(quietPeriod, _onSilenceSettled);
+      return;
+    }
     _isQuiet = true;
     if (_autoCaptureSnapshots && _hasUnsettledOutput) {
       _hasUnsettledOutput = false;
@@ -275,14 +285,23 @@ class TerminalDriver {
 
   /// Sends raw text input to the terminal or underlying process.
   void send(String text) {
-    _outputSeqAtLastSend = _outputSeq;
-    _backBufferFloor = _totalBackBufferAppended;
+    _markSend();
     if (onSend != null) {
       onSend!(text);
     } else {
       terminal.textInput(text);
     }
     _bumpActivity();
+  }
+
+  /// Records the output sequence, back-buffer position and screen contents at
+  /// the moment of a send so later waits can ignore pre-existing content.
+  void _markSend() {
+    _outputSeqAtLastSend = _outputSeq;
+    _backBufferFloor = _totalBackBufferAppended;
+    _bellFloor = _bellCount;
+    _tagFloor = _totalTagsAppended;
+    _screenAtLastSend = getScreenLines(trimTrailing: true);
   }
 
   /// Sends text followed by a carriage return.
@@ -297,8 +316,6 @@ class TerminalDriver {
     bool alt = false,
     bool ctrl = false,
   }) {
-    _outputSeqAtLastSend = _outputSeq;
-    _backBufferFloor = _totalBackBufferAppended;
     if (onSend != null) {
       final output = terminal.inputHandler?.call(
         TerminalKeyboardEvent(
@@ -311,21 +328,36 @@ class TerminalDriver {
           platform: terminal.platform,
         ),
       );
-      _bumpActivity();
       if (output != null) {
+        _markSend();
         onSend!(output);
+        _bumpActivity();
         return true;
       }
       return false;
     }
 
+    final prevSeq = _outputSeqAtLastSend;
+    final prevBackBufferFloor = _backBufferFloor;
+    final prevBellFloor = _bellFloor;
+    final prevTagFloor = _tagFloor;
+    final prevScreen = _screenAtLastSend;
+    _markSend();
     final handled = terminal.keyInput(
       key,
       shift: shift,
       alt: alt,
       ctrl: ctrl,
     );
-    _bumpActivity();
+    if (handled) {
+      _bumpActivity();
+    } else {
+      _outputSeqAtLastSend = prevSeq;
+      _backBufferFloor = prevBackBufferFloor;
+      _bellFloor = prevBellFloor;
+      _tagFloor = prevTagFloor;
+      _screenAtLastSend = prevScreen;
+    }
     return handled;
   }
 
@@ -395,7 +427,9 @@ class TerminalDriver {
     final elapsed = lastActivity != null
         ? DateTime.now().difference(lastActivity)
         : Duration.zero;
-    if (isQuiet && elapsed >= effectiveSilence) {
+    if (lastActivity != null &&
+        elapsed >= effectiveSilence &&
+        terminal.pendingWriteLength == 0) {
       return Future.value();
     }
 
@@ -419,8 +453,9 @@ class TerminalDriver {
     }
 
     sub = _activityController.stream.listen((_) => scheduleTimer(effectiveSilence));
-    final initialDelay =
-        elapsed < effectiveSilence ? effectiveSilence - elapsed : effectiveSilence;
+    final initialDelay = lastActivity != null && elapsed < effectiveSilence
+        ? effectiveSilence - elapsed
+        : effectiveSilence;
     scheduleTimer(initialDelay);
 
     timeoutTimer = Timer(timeout, () {
@@ -438,10 +473,17 @@ class TerminalDriver {
 
   /// Waits for the terminal bell to ring.
   Future<int> waitForBell({Duration timeout = const Duration(seconds: 5)}) {
-    final initialCount = _bellCount;
+    if (_bellCount > _bellFloor) {
+      _bellFloor = _bellCount;
+      return Future.value(_bellCount);
+    }
+    final initialCount = _bellFloor;
     return onBell
         .firstWhere((count) => count > initialCount)
-        .timeout(timeout, onTimeout: () {
+        .then((count) {
+      if (_bellFloor < count) _bellFloor = count;
+      return count;
+    }).timeout(timeout, onTimeout: () {
       throw TimeoutException('Timed out waiting for terminal bell', timeout);
     });
   }
@@ -452,11 +494,30 @@ class TerminalDriver {
     Pattern? argPattern,
     Duration timeout = const Duration(seconds: 10),
   }) {
-    return onTag.firstWhere((event) {
+    bool matchesTag(TerminalTagEvent event) {
       if (event.code != code) return false;
       if (argPattern == null) return true;
       return event.args.any((arg) => argPattern.allMatches(arg).isNotEmpty) ||
           argPattern.allMatches(event.args.join(';')).isNotEmpty;
+    }
+
+    final unconsumed = _totalTagsAppended - _tagFloor;
+    if (unconsumed > 0 && _tagEvents.isNotEmpty) {
+      final length = _tagEvents.length;
+      final count = unconsumed < length ? unconsumed : length;
+      final startIndex = length - count;
+      for (var i = startIndex; i < length; i++) {
+        final event = _tagEvents.elementAt(i);
+        if (matchesTag(event)) {
+          _tagFloor = _totalTagsAppended - (length - 1 - i);
+          return Future.value(event);
+        }
+      }
+    }
+
+    return onTag.firstWhere(matchesTag).then((event) {
+      _tagFloor = _totalTagsAppended;
+      return event;
     }).timeout(timeout, onTimeout: () {
       throw TimeoutException(
         'Timed out waiting for OSC tag $code ($argPattern)',
@@ -466,25 +527,41 @@ class TerminalDriver {
   }
 
   /// Waits for visible screen text or back-buffer to match [pattern].
+  ///
+  /// By default only content produced since the last [send] or [sendKey] is
+  /// considered: back-buffer lines captured before the send are skipped, and
+  /// screen rows whose text is unchanged since the send (after accounting for
+  /// lines that scrolled off in between) are treated as stale and ignored.
+  /// Pass [sinceLastSend] as false to match against everything on screen.
   Future<void> waitForPattern(
     Pattern pattern, {
     Duration timeout = const Duration(seconds: 10),
     bool searchBackBuffer = true,
+    bool sinceLastSend = true,
   }) {
+    var checkedBackBufferSeq = sinceLastSend ? _backBufferFloor : 0;
+
     bool checkMatch() {
-      final screenText = getScreenText();
+      if (sinceLastSend && checkedBackBufferSeq < _backBufferFloor) {
+        checkedBackBufferSeq = _backBufferFloor;
+      }
+      final screenText = sinceLastSend
+          ? _freshScreenLines().join('\n')
+          : getScreenText();
       if (pattern.allMatches(screenText).isNotEmpty) return true;
 
       if (searchBackBuffer && _capturedBackBuffer.isNotEmpty) {
-        final searchableCount = _totalBackBufferAppended - _backBufferFloor;
+        final length = _capturedBackBuffer.length;
+        final searchableCount = _totalBackBufferAppended - checkedBackBufferSeq;
         if (searchableCount > 0) {
-          var remaining = searchableCount < _capturedBackBuffer.length
-              ? searchableCount
-              : _capturedBackBuffer.length;
-          for (final line in _capturedBackBuffer.toList().reversed) {
-            if (remaining-- <= 0) break;
-            if (pattern.allMatches(line).isNotEmpty) return true;
+          final count = searchableCount < length ? searchableCount : length;
+          // ListQueue.elementAt is O(1); walk newest-first without copying.
+          for (var i = length - 1; i >= length - count; i--) {
+            if (pattern.allMatches(_capturedBackBuffer.elementAt(i)).isNotEmpty) {
+              return true;
+            }
           }
+          checkedBackBufferSeq = _totalBackBufferAppended;
         }
       }
       return false;
@@ -525,6 +602,27 @@ class TerminalDriver {
     });
 
     return completer.future;
+  }
+
+  /// Returns the current screen rows with rows that are unchanged since the
+  /// last send blanked out. Row `i` is compared against the row that occupied
+  /// `i + shift` at send time, where `shift` is the number of lines evicted
+  /// since; rows with no counterpart (new output, or a cleared screen) count
+  /// as fresh. Before any send every row is fresh.
+  List<String> _freshScreenLines() {
+    final current = getScreenLines(trimTrailing: true);
+    final previous = _screenAtLastSend;
+    if (previous == null) return current;
+
+    final shift = _totalBackBufferAppended - _backBufferFloor;
+    for (var i = 0; i < current.length; i++) {
+      final previousIndex = i + shift;
+      if (previousIndex < previous.length &&
+          previous[previousIndex] == current[i]) {
+        current[i] = '';
+      }
+    }
+    return current;
   }
 
   // --- Screen Capture and Inspection ---

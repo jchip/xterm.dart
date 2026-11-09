@@ -23,6 +23,28 @@ void main() {
     });
   });
 
+  group('Terminal.onLineScrolledOff', () {
+    test('installs and removes buffer eviction hooks', () {
+      final terminal = Terminal();
+      terminal.resize(10, 2);
+      expect(terminal.mainBuffer.onLineEvicted, isNull);
+      expect(terminal.altBuffer.onLineEvicted, isNull);
+
+      final seen = <String>[];
+      terminal.onLineScrolledOff =
+          (line, {required isAltBuffer}) => seen.add(line.toString().trim());
+      expect(terminal.mainBuffer.onLineEvicted, isNotNull);
+
+      terminal.write('a\r\nb\r\nc');
+      expect(seen, equals(['a']));
+
+      terminal.onLineScrolledOff = null;
+      expect(terminal.mainBuffer.onLineEvicted, isNull);
+      terminal.write('\r\nd');
+      expect(seen, equals(['a']));
+    });
+  });
+
   group('TerminalDriver automation', () {
     test('sends text and key inputs to target', () {
       final terminal = Terminal();
@@ -274,6 +296,99 @@ void main() {
       driver.dispose();
     });
 
+    test('waitForPattern ignores stale screen rows from before last send', () async {
+      final terminal = Terminal();
+      terminal.resize(20, 6);
+      final driver = TerminalDriver(terminal);
+
+      // Prompt is drawn and stays visible on screen
+      terminal.write('PROMPT_READY\r\n\$ ');
+      expect(driver.getScreenText(), contains('PROMPT_READY'));
+
+      driver.sendLine('cmd');
+
+      // Still on screen, but unchanged since the send: must not match
+      await expectLater(
+        driver.waitForPattern(
+          'PROMPT_READY',
+          timeout: const Duration(milliseconds: 60),
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+
+      // Opt-out matches the current screen as-is
+      await expectLater(
+        driver.waitForPattern('PROMPT_READY', sinceLastSend: false),
+        completes,
+      );
+
+      // New output pushes the old prompt up one row; it is still stale
+      terminal.write('cmd\r\nout-1\r\n');
+      await expectLater(
+        driver.waitForPattern(
+          'PROMPT_READY',
+          timeout: const Duration(milliseconds: 60),
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+
+      // A freshly printed prompt on a new row matches
+      terminal.write('PROMPT_READY\r\n\$ ');
+      await expectLater(driver.waitForPattern('PROMPT_READY'), completes);
+
+      driver.dispose();
+    });
+
+    test('waitForPattern sees in-place TUI redraws and stale rows after scroll', () async {
+      final terminal = Terminal();
+      terminal.resize(20, 3);
+      final driver = TerminalDriver(terminal);
+
+      terminal.write('\x1b[?1049h\x1b[HSTATUS: idle\r\nrow-2\r\nrow-3');
+      driver.sendKey(TerminalKey.enter);
+
+      // Unchanged alt-screen rows are stale
+      await expectLater(
+        driver.waitForPattern('idle', timeout: const Duration(milliseconds: 60)),
+        throwsA(isA<TimeoutException>()),
+      );
+
+      // In-place overwrite of row 0 is fresh content
+      terminal.write('\x1b[H\x1b[KSTATUS: done');
+      await expectLater(driver.waitForPattern('STATUS: done'), completes);
+
+      // Scrolling moves row-2 up; its shifted copy is still stale,
+      // while the row it scrolled from now holds fresh content.
+      terminal.write('\x1b[3;1H\r\nrow-4');
+      expect(driver.getScreenLines(), equals(['row-2', 'row-3', 'row-4']));
+      await expectLater(
+        driver.waitForPattern('row-2', timeout: const Duration(milliseconds: 60)),
+        throwsA(isA<TimeoutException>()),
+      );
+      await expectLater(driver.waitForPattern('row-4'), completes);
+
+      driver.dispose();
+    });
+
+    test('custom waitForQuiet returns immediately once the silence has elapsed', () async {
+      final terminal = Terminal();
+      final driver = TerminalDriver(
+        terminal,
+        quietPeriod: const Duration(seconds: 5),
+      );
+
+      terminal.write('burst');
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      expect(driver.isQuiet, isFalse);
+
+      final sw = Stopwatch()..start();
+      await driver.waitForQuiet(silence: const Duration(milliseconds: 20));
+      sw.stop();
+      expect(sw.elapsedMilliseconds, lessThan(15));
+
+      driver.dispose();
+    });
+
     test('waitForResponse handles synchronous output emitted during onSend', () async {
       final terminal = Terminal();
       late final TerminalDriver driver;
@@ -333,6 +448,107 @@ void main() {
       expect(
         driver.capturedBackBuffer,
         containsAllInOrder(['row-top', 'row-mid', 'row-bot']),
+      );
+
+      driver.dispose();
+    });
+
+    test('CSI H CSI J evicts viewport lines when mainBuffer is full', () {
+      final terminal = Terminal(maxLines: 25);
+      terminal.resize(20, 2);
+
+      for (var i = 1; i <= 25; i++) {
+        terminal.write('row-$i${i < 25 ? '\r\n' : ''}');
+      }
+      expect(terminal.mainBuffer.lines.isFull, isTrue);
+
+      final driver = TerminalDriver(terminal);
+      terminal.write('\x1b[H\x1b[J');
+
+      expect(
+        driver.capturedBackBuffer,
+        containsAllInOrder(['row-23', 'row-24', 'row-25']),
+      );
+
+      driver.dispose();
+    });
+
+    test('pre-existing scrollback at driver creation does not satisfy waitForPattern by default', () async {
+      final terminal = Terminal();
+      terminal.resize(20, 2);
+      terminal.write('OLD_PROMPT\r\nline-1\r\nline-2');
+
+      final driver = TerminalDriver(terminal);
+      expect(driver.capturedBackBuffer, contains('OLD_PROMPT'));
+
+      await expectLater(
+        driver.waitForPattern(
+          'OLD_PROMPT',
+          timeout: const Duration(milliseconds: 60),
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+
+      await expectLater(
+        driver.waitForPattern('OLD_PROMPT', sinceLastSend: false),
+        completes,
+      );
+
+      driver.dispose();
+    });
+
+    test('waitForTag and waitForBell handle synchronous and coalesced events', () async {
+      final terminal = Terminal();
+      final driver = TerminalDriver(
+        terminal,
+        onSend: (text) {
+          terminal.write('\x1b]133;C\x07output\x07\r\n\x1b]133;D;0\x07');
+        },
+      );
+
+      driver.sendLine('run');
+
+      final startTag = await driver.waitForTag('133', argPattern: 'C');
+      expect(startTag.args, equals(['C']));
+
+      final bellCount = await driver.waitForBell();
+      expect(bellCount, 1);
+
+      final doneTag = await driver.waitForTag('133', argPattern: 'D');
+      expect(doneTag.args, equals(['D', '0']));
+
+      // Subsequent waits require new events
+      await expectLater(
+        driver.waitForBell(timeout: const Duration(milliseconds: 50)),
+        throwsA(isA<TimeoutException>()),
+      );
+      await expectLater(
+        driver.waitForTag(
+          '133',
+          argPattern: 'D',
+          timeout: const Duration(milliseconds: 50),
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+
+      driver.dispose();
+    });
+
+    test('unhandled sendKey does not mark driver non-quiet or advance watermarks', () async {
+      final terminal = Terminal();
+      final driver = TerminalDriver(terminal, onSend: (_) {});
+
+      terminal.write('VISIBLE_LINE');
+      await driver.waitForQuiet();
+      expect(driver.isQuiet, isTrue);
+
+      final handled = driver.sendKey(TerminalKey.none);
+      expect(handled, isFalse);
+      expect(driver.isQuiet, isTrue);
+
+      await expectLater(
+        driver.waitForPattern('VISIBLE_LINE'),
+        completes,
       );
 
       driver.dispose();

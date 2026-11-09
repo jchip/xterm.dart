@@ -2,6 +2,7 @@ import fcntl
 import os
 import pty
 import select
+import signal
 import struct
 import sys
 import termios
@@ -65,7 +66,14 @@ except (OSError, KeyboardInterrupt):
     pass
 finally:
     try:
-        os.kill(pid, 9)
+        os.killpg(pid, signal.SIGKILL)
+    except Exception:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except Exception:
+            pass
+    try:
+        os.waitpid(pid, 0)
     except Exception:
         pass
     os.close(master)
