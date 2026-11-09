@@ -66,11 +66,11 @@ void main() {
     final driver = TerminalDriver(
       terminal,
       quietPeriod: const Duration(milliseconds: 1500),
-      onSend: (text) {
-        proc.stdin.write(text);
-        proc.stdin.flush();
-      },
     );
+    terminal.onOutput = (text) {
+      proc.stdin.write(text);
+      proc.stdin.flush();
+    };
 
     final stdoutSub = proc.stdout
         .transform(const Utf8Decoder(allowMalformed: true))

@@ -36,6 +36,8 @@ We solve this with a two-part capture strategy:
    - We hook `Buffer.scrollUp(count)` in `lib/src/core/buffer/buffer.dart`.
    - Before any line is shifted off the top margin, we copy the line and dispatch it to an eviction listener.
    - In the alternative buffer, every line that scrolls off the top is appended to a shadow back-buffer.
+   - `deleteLines` (`CSI M`) with the cursor on the top margin is treated as a scroll and evicts the deleted lines; deletions lower in the region edit in place and are not captured.
+   - The hook is only installed while `Terminal.onLineScrolledOff` is set, so terminals without a driver pay nothing.
    - This ensures pagers and scrolling TUIs never lose scrolled content.
 
 2. **Settled-State Frame Snapshots (State Preservation)**:
@@ -93,7 +95,7 @@ flowchart TD
 
 ### 1. Keystroke and Text Injection
 The driver exposes high-level helpers:
-- `send(String text)`: Feeds raw input into the terminal input stream.
+- `send(String text)`: Feeds raw input into the terminal input stream via `Terminal.textInput`; the host wires `Terminal.onOutput` to the PTY, exactly as for keyboard input.
 - `sendLine(String text)`: Feeds input followed by a carriage return.
 - `sendKey(TerminalKey key, {bool ctrl, bool alt, bool shift})`: Sends terminal key sequences.
 

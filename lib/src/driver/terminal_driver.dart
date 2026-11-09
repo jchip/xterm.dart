@@ -3,7 +3,6 @@ import 'dart:collection';
 
 import 'package:xterm/src/core/buffer/cell_offset.dart';
 import 'package:xterm/src/core/buffer/line.dart';
-import 'package:xterm/src/core/input/handler.dart';
 import 'package:xterm/src/core/input/keys.dart';
 import 'package:xterm/src/terminal.dart';
 
@@ -73,10 +72,14 @@ class TerminalScreenSnapshot {
 /// It supports keystroke injection, output quiet/settle detection,
 /// OSC tag detection, bell tracking, and persistent back-buffer capture
 /// across both normal and alternative screen (TUI) modes.
+///
+/// Input is injected through [Terminal.textInput] and [Terminal.keyInput], so
+/// it reaches the target process through [Terminal.onOutput] exactly like
+/// keyboard input from a [TerminalView] would. Wire [Terminal.onOutput] to the
+/// PTY (or a simulated responder) before driving the terminal.
 class TerminalDriver {
   TerminalDriver(
     this.terminal, {
-    this.onSend,
     this.quietPeriod = const Duration(milliseconds: 300),
     this.maxBackBufferLines = 5000,
     this.maxSnapshots = 500,
@@ -88,10 +91,6 @@ class TerminalDriver {
 
   /// The underlying terminal instance being driven.
   final Terminal terminal;
-
-  /// Optional callback to deliver input strings to the target process (e.g. PTY).
-  /// If not provided, inputs are sent directly via [Terminal.textInput].
-  final void Function(String text)? onSend;
 
   /// The duration of silence required to declare the terminal quiet/settled.
   final Duration quietPeriod;
@@ -114,8 +113,8 @@ class TerminalDriver {
 
   int _bellCount = 0;
   int _bellFloor = 0;
-  int _outputSeq = 0;
-  int _outputSeqAtLastSend = 0;
+  int _writeSeq = 0;
+  int _writeSeqAtLastSend = 0;
   int _totalBackBufferAppended = 0;
   int _backBufferFloor = 0;
   int _totalTagsAppended = 0;
@@ -131,7 +130,7 @@ class TerminalDriver {
   final _quietController = StreamController<void>.broadcast();
   final _bellController = StreamController<int>.broadcast();
   final _tagController = StreamController<TerminalTagEvent>.broadcast();
-  final _outputController = StreamController<String>.broadcast();
+  final _writeController = StreamController<String>.broadcast();
 
   void Function()? _prevOnBell;
   void Function(String code, List<String> args)? _prevOnPrivateOsc;
@@ -164,10 +163,10 @@ class TerminalDriver {
   }
 
   void _handleWrite(String data) {
-    _outputSeq++;
+    _writeSeq++;
     _hasUnsettledOutput = true;
     _prevOnWrite?.call(data);
-    _outputController.add(data);
+    _writeController.add(data);
     _bumpActivity();
   }
 
@@ -265,15 +264,15 @@ class TerminalDriver {
   /// Stream of newly arrived OSC tag events.
   Stream<TerminalTagEvent> get onTag => _tagController.stream;
 
-  /// Raw data stream received by the terminal.
-  Stream<String> get onOutput => _outputController.stream;
+  /// Stream of raw program output as it is written to the terminal, mirroring
+  /// [Terminal.onWrite]. Not to be confused with [Terminal.onOutput], which
+  /// carries input from the terminal to the program.
+  Stream<String> get onWrite => _writeController.stream;
 
-  /// Unified back-buffer containing lines scrolled off the screen.
+  /// Unified back-buffer: main-buffer scrollback present at construction plus
+  /// every line that has since left the viewport in either buffer.
   List<String> get capturedBackBuffer =>
       List.unmodifiable(_capturedBackBuffer);
-
-  /// All back-buffer lines across main buffer scrollback and alt-buffer scroll-off.
-  List<String> get allBackBufferLines => List.unmodifiable(_capturedBackBuffer);
 
   /// Specifically captured lines that scrolled off during alternative buffer mode.
   List<String> get altScrolledLines => List.unmodifiable(_altScrolledLines);
@@ -283,21 +282,17 @@ class TerminalDriver {
 
   // --- Script Actions ---
 
-  /// Sends raw text input to the terminal or underlying process.
+  /// Sends raw text input to the program via [Terminal.textInput].
   void send(String text) {
     _markSend();
-    if (onSend != null) {
-      onSend!(text);
-    } else {
-      terminal.textInput(text);
-    }
+    terminal.textInput(text);
     _bumpActivity();
   }
 
   /// Records the output sequence, back-buffer position and screen contents at
   /// the moment of a send so later waits can ignore pre-existing content.
   void _markSend() {
-    _outputSeqAtLastSend = _outputSeq;
+    _writeSeqAtLastSend = _writeSeq;
     _backBufferFloor = _totalBackBufferAppended;
     _bellFloor = _bellCount;
     _tagFloor = _totalTagsAppended;
@@ -309,35 +304,16 @@ class TerminalDriver {
     send('$text\r');
   }
 
-  /// Sends a specific key input with optional modifiers.
+  /// Sends a key with optional modifiers via [Terminal.keyInput]. Returns
+  /// whether the terminal's input handler produced a sequence for it; an
+  /// unhandled key leaves the driver's send watermarks untouched.
   bool sendKey(
     TerminalKey key, {
     bool shift = false,
     bool alt = false,
     bool ctrl = false,
   }) {
-    if (onSend != null) {
-      final output = terminal.inputHandler?.call(
-        TerminalKeyboardEvent(
-          key: key,
-          shift: shift,
-          alt: alt,
-          ctrl: ctrl,
-          state: terminal,
-          altBuffer: terminal.isUsingAltBuffer,
-          platform: terminal.platform,
-        ),
-      );
-      if (output != null) {
-        _markSend();
-        onSend!(output);
-        _bumpActivity();
-        return true;
-      }
-      return false;
-    }
-
-    final prevSeq = _outputSeqAtLastSend;
+    final prevSeq = _writeSeqAtLastSend;
     final prevBackBufferFloor = _backBufferFloor;
     final prevBellFloor = _bellFloor;
     final prevTagFloor = _tagFloor;
@@ -352,7 +328,7 @@ class TerminalDriver {
     if (handled) {
       _bumpActivity();
     } else {
-      _outputSeqAtLastSend = prevSeq;
+      _writeSeqAtLastSend = prevSeq;
       _backBufferFloor = prevBackBufferFloor;
       _bellFloor = prevBellFloor;
       _tagFloor = prevTagFloor;
@@ -383,8 +359,8 @@ class TerminalDriver {
     final stopwatch = Stopwatch()..start();
 
     // 1. Wait for activity to start if none has arrived since the last send
-    if (_outputSeq <= _outputSeqAtLastSend) {
-      await onOutput.first.timeout(
+    if (_writeSeq <= _writeSeqAtLastSend) {
+      await onWrite.first.timeout(
         timeout,
         onTimeout: () => throw TimeoutException(
           'Timed out waiting for response output to begin',
@@ -399,7 +375,7 @@ class TerminalDriver {
       throw TimeoutException('Timed out waiting for terminal quiet', timeout);
     }
     await waitForQuiet(silence: effectiveSilence, timeout: remainingTimeout);
-    _outputSeqAtLastSend = _outputSeq;
+    _writeSeqAtLastSend = _writeSeq;
   }
 
   /// Waits until no new output arrives for the given [silence] interval.
@@ -685,6 +661,6 @@ class TerminalDriver {
     _quietController.close();
     _bellController.close();
     _tagController.close();
-    _outputController.close();
+    _writeController.close();
   }
 }

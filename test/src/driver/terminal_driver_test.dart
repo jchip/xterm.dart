@@ -50,10 +50,8 @@ void main() {
       final terminal = Terminal();
       final sent = <String>[];
 
-      final driver = TerminalDriver(
-        terminal,
-        onSend: sent.add,
-      );
+      terminal.onOutput = sent.add;
+      final driver = TerminalDriver(terminal);
 
       driver.send('hello');
       driver.sendLine('world');
@@ -190,7 +188,7 @@ void main() {
 
       expect(driver.altScrolledLines, equals(['alt-1']));
       expect(
-        driver.allBackBufferLines,
+        driver.capturedBackBuffer,
         equals(['main-1', 'main-2', 'alt-1']),
       );
 
@@ -389,15 +387,14 @@ void main() {
       driver.dispose();
     });
 
-    test('waitForResponse handles synchronous output emitted during onSend', () async {
+    test('waitForResponse handles synchronous output emitted during onOutput', () async {
       final terminal = Terminal();
-      late final TerminalDriver driver;
-      driver = TerminalDriver(
+      terminal.onOutput = (text) {
+        terminal.write('sync-reply: $text\r\n');
+      };
+      final driver = TerminalDriver(
         terminal,
         quietPeriod: const Duration(milliseconds: 30),
-        onSend: (text) {
-          terminal.write('sync-reply: $text\r\n');
-        },
       );
 
       driver.sendLine('ping');
@@ -499,12 +496,10 @@ void main() {
 
     test('waitForTag and waitForBell handle synchronous and coalesced events', () async {
       final terminal = Terminal();
-      final driver = TerminalDriver(
-        terminal,
-        onSend: (text) {
-          terminal.write('\x1b]133;C\x07output\x07\r\n\x1b]133;D;0\x07');
-        },
-      );
+      terminal.onOutput = (text) {
+        terminal.write('\x1b]133;C\x07output\x07\r\n\x1b]133;D;0\x07');
+      };
+      final driver = TerminalDriver(terminal);
 
       driver.sendLine('run');
 
@@ -536,7 +531,7 @@ void main() {
 
     test('unhandled sendKey does not mark driver non-quiet or advance watermarks', () async {
       final terminal = Terminal();
-      final driver = TerminalDriver(terminal, onSend: (_) {});
+      final driver = TerminalDriver(terminal);
 
       terminal.write('VISIBLE_LINE');
       await driver.waitForQuiet();

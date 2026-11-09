@@ -65,11 +65,11 @@ void main() {
     final driver = TerminalDriver(
       terminal,
       quietPeriod: const Duration(seconds: 4),
-      onSend: (text) {
-        proc.stdin.write(text);
-        proc.stdin.flush();
-      },
     );
+    terminal.onOutput = (text) {
+      proc.stdin.write(text);
+      proc.stdin.flush();
+    };
 
     // Hook terminal writes from PTY
     proc.stdout
@@ -112,7 +112,7 @@ void main() {
 
     print('[DRIVER] Task 1 completed in ${sw1.elapsed.inSeconds}s!');
     print('=== CURRENT SCREEN ===\n${driver.getScreenText()}\n======================');
-    final backBuffer = driver.allBackBufferLines;
+    final backBuffer = driver.capturedBackBuffer;
     final task1Scrolled = backBuffer.length;
     final task1Visible =
         driver.getScreenLines(trimTrailing: true).where((l) => l.isNotEmpty).length;
@@ -157,7 +157,7 @@ void main() {
     print('[DRIVER] Task 2 completed in ${sw2.elapsed.inSeconds}s!');
     driver.captureSnapshot(label: 'task2-done');
 
-    final totalBackBuffer = driver.allBackBufferLines;
+    final totalBackBuffer = driver.capturedBackBuffer;
     final totalScrolled = totalBackBuffer.length;
     final finalScreenLines =
         driver.getScreenLines(trimTrailing: true).where((l) => l.isNotEmpty).toList();

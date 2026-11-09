@@ -478,6 +478,9 @@ class Buffer {
 
     count = min(count, absoluteMarginBottom - absoluteCursorY + 1);
 
+    // Deleting at the top margin is how pagers and curses apps scroll a
+    // region, so those lines are reported as evicted. Deletions further down
+    // edit the screen in place and are deliberately not reported.
     if (_cursorY == _marginTop && count > 0 && onLineEvicted != null) {
       for (var i = 0; i < count; i++) {
         onLineEvicted!(lines[absoluteCursorY + i]);

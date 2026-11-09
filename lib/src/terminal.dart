@@ -641,11 +641,14 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
     newWidth = max(newWidth, 1);
     newHeight = max(newHeight, 1);
 
+    onResize?.call(newWidth, newHeight, pixelWidth ?? 0, pixelHeight ?? 0);
+
+    // Same size: the host has been notified, but there is no buffer work to
+    // do. Returning here also leaves a program's scroll margins intact, which
+    // a redundant resize used to reset.
     if (_viewWidth == newWidth && _viewHeight == newHeight) {
       return;
     }
-
-    onResize?.call(newWidth, newHeight, pixelWidth ?? 0, pixelHeight ?? 0);
 
     //we need to resize both buffers so that they are ready when we switch between them
     _altBuffer.resize(_viewWidth, _viewHeight, newWidth, newHeight);

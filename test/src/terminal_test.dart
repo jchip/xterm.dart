@@ -51,6 +51,34 @@ void main() {
     });
   });
 
+  group('Terminal.resize', () {
+    test('notifies onResize even when the size is unchanged', () {
+      final sizes = <String>[];
+      final terminal = Terminal(
+        onResize: (w, h, pw, ph) => sizes.add('${w}x$h'),
+      );
+      terminal.resize(80, 24);
+      terminal.resize(80, 24);
+      expect(sizes, equals(['80x24', '80x24']));
+    });
+
+    test('same-size resize keeps scroll margins, real resize resets them', () {
+      final terminal = Terminal();
+      terminal.resize(80, 24);
+      terminal.write('\x1b[5;10r');
+      expect(terminal.buffer.marginTop, 4);
+      expect(terminal.buffer.marginBottom, 9);
+
+      terminal.resize(80, 24);
+      expect(terminal.buffer.marginTop, 4);
+      expect(terminal.buffer.marginBottom, 9);
+
+      terminal.resize(80, 30);
+      expect(terminal.buffer.marginTop, 0);
+      expect(terminal.buffer.marginBottom, 29);
+    });
+  });
+
   group('Terminal.reflowEnabled', () {
     test('prevents reflow when set to false', () {
       final terminal = Terminal(reflowEnabled: false);

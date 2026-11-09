@@ -57,10 +57,10 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
     tabController = TabController(length: 4, vsync: this);
 
     terminal = Terminal(maxLines: 2000);
+    terminal.onOutput = _handleDriverSend;
     driver = TerminalDriver(
       terminal,
       quietPeriod: const Duration(milliseconds: 300),
-      onSend: _handleDriverSend,
     );
 
     _hookDriverEvents();
@@ -307,11 +307,10 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
 
   void _restoreSimulatedDriver() {
     driver.dispose();
-    terminal.onOutput = null;
+    terminal.onOutput = _handleDriverSend;
     driver = TerminalDriver(
       terminal,
       quietPeriod: const Duration(milliseconds: 300),
-      onSend: _handleDriverSend,
     );
     _hookDriverEvents();
   }
@@ -364,10 +363,6 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
       driver = TerminalDriver(
         terminal,
         quietPeriod: const Duration(milliseconds: 1500),
-        onSend: (text) {
-          proc.stdin.write(text);
-          proc.stdin.flush();
-        },
       );
       _hookDriverEvents();
 
@@ -400,7 +395,7 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
       );
       _addLog('agy Task 1 finished! Quiet period detected.');
 
-      final task1Scrolled = driver.allBackBufferLines.length;
+      final task1Scrolled = driver.capturedBackBuffer.length;
       final task1Screen = driver
           .getScreenLines(trimTrailing: true)
           .where((l) => l.isNotEmpty)
@@ -424,8 +419,8 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
       _addLog('agy Task 2 finished! Quiet period detected.');
       driver.captureSnapshot(label: 'agy-task2-finished');
 
-      final totalScrolled = driver.allBackBufferLines.length;
-      final allScrolledText = driver.allBackBufferLines.join('\n');
+      final totalScrolled = driver.capturedBackBuffer.length;
+      final allScrolledText = driver.capturedBackBuffer.join('\n');
       final allScreenText = driver.getScreenText();
 
       // Write results to disk for automated inspection
@@ -462,7 +457,7 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
         'status': 'ERROR',
         'error': e.toString(),
         'screen': driver.getScreenText(),
-        'back_buffer_count': driver.allBackBufferLines.length,
+        'back_buffer_count': driver.capturedBackBuffer.length,
         'stackTrace': st.toString(),
       }));
     } finally {
@@ -525,10 +520,6 @@ class _AutomationDemoPageState extends State<AutomationDemoPage>
       driver = TerminalDriver(
         terminal,
         quietPeriod: const Duration(milliseconds: 1500),
-        onSend: (text) {
-          proc.stdin.write(text);
-          proc.stdin.flush();
-        },
       );
       _hookDriverEvents();
 

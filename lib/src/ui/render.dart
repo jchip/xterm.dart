@@ -2,6 +2,7 @@ import 'dart:math' show max;
 import 'dart:ui';
 
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:xterm/src/core/cell.dart';
 import 'package:xterm/src/core/buffer/cell_offset.dart';
@@ -573,29 +574,44 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     return _terminal.mouseInput(button, buttonState, position);
   }
 
+  bool _editableRectNotifyScheduled = false;
+
+  CellOffset get _cursorCell =>
+      CellOffset(_terminal.buffer.cursorX, _terminal.buffer.absoluteCursorY);
+
+  /// Schedules an editable-rect notification for the end of the next frame.
+  ///
+  /// This is called from terminal and scroll listeners, which can run before
+  /// this render object or its ancestors have been laid out; [localToGlobal]
+  /// is only valid once layout has completed, so the work is deferred.
   void _notifyEditableRect() {
+    if (_editableRectNotifyScheduled) return;
+    if (_cursorCell == _lastNotifiedCursorPos) return;
+    _editableRectNotifyScheduled = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _editableRectNotifyScheduled = false;
+      _emitEditableRect();
+    });
+  }
+
+  void _emitEditableRect() {
     if (!attached || !hasSize) return;
-    try {
-      final cursorPos =
-          CellOffset(_terminal.buffer.cursorX, _terminal.buffer.absoluteCursorY);
-      if (cursorPos == _lastNotifiedCursorPos) return;
+    final cursorPos = _cursorCell;
+    if (cursorPos == _lastNotifiedCursorPos) return;
+    _lastNotifiedCursorPos = cursorPos;
 
-      final cursor = localToGlobal(cursorOffset);
-      _lastNotifiedCursorPos = cursorPos;
+    final cursor = localToGlobal(cursorOffset);
 
-      final rect = Rect.fromLTRB(
-        cursor.dx,
-        cursor.dy,
-        size.width,
-        cursor.dy + _painter.cellSize.height,
-      );
+    final rect = Rect.fromLTRB(
+      cursor.dx,
+      cursor.dy,
+      size.width,
+      cursor.dy + _painter.cellSize.height,
+    );
 
-      final caretRect = cursor & _painter.cellSize;
+    final caretRect = cursor & _painter.cellSize;
 
-      _onEditableRect?.call(rect, caretRect);
-    } catch (_) {
-      // Render tree ancestor may not be laid out yet.
-    }
+    _onEditableRect?.call(rect, caretRect);
   }
 
   /// Update the viewport size in cells based on the current widget size in
